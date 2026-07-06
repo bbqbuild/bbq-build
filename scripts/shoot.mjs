@@ -9,6 +9,7 @@ mkdirSync(OUT, { recursive: true })
 
 const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 1600, height: 950 } })
+page.setDefaultTimeout(120000)
 page.on('console', (m) => m.type() === 'error' && console.log('CONSOLE ERROR:', m.text()))
 page.on('pageerror', (e) => console.log('PAGE ERROR:', e.message))
 
