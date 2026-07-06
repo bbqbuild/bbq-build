@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { PRESETS } from '../catalog/presets'
-import { computeLayout } from '../canvas/layout'
-import { renderScene } from '../canvas/renderScene'
+import { computeScene, renderScene } from '../canvas/renderScene'
 import { formatPrice, priceBreakdown, useStore } from '../state/store'
 import type { Design, Preset } from '../types'
 import { fitView } from '../canvas/CanvasStage'
@@ -19,12 +18,12 @@ function PresetThumb({ design }: { design: Design }) {
     canvas.height = H * dpr
     canvas.style.width = `${W}px`
     canvas.style.height = `${H}px`
-    const layout = computeLayout(design)
-    const pad = 1.2
-    const zoom = Math.min(W / (layout.bounds.w * pad), H / (layout.bounds.h * pad * 1.35))
+    const scene = computeScene(design)
+    const pad = 1.15
+    const zoom = Math.min(W / (scene.bounds.w * pad), H / (scene.bounds.h * pad))
     renderScene(ctx, {
       design,
-      layout,
+      scene,
       selection: { kind: 'none' },
       hoveredFrameId: null,
       hoveredApplianceId: null,
@@ -35,7 +34,7 @@ function PresetThumb({ design }: { design: Design }) {
       showGrid: false,
       unit: 'cm',
       time: 0.4,
-      camera: { x: layout.bounds.x + layout.bounds.w / 2, y: layout.bounds.y + layout.bounds.h / 2, zoom },
+      camera: { x: scene.bounds.x + scene.bounds.w / 2, y: scene.bounds.y + scene.bounds.h / 2, zoom },
       width: W,
       height: H,
       dpr,

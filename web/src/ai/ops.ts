@@ -2,8 +2,8 @@ import type { ChatOperation } from '../auth/api'
 import { getAppliance } from '../catalog/appliances'
 import { checkPlacement } from '../catalog/compat'
 import { useStore } from '../state/store'
-import type { FrameFinish, FrameWidth, GroundType, Zone } from '../types'
-import { FRAME_WIDTHS } from '../types'
+import type { FrameFinish, FrameWidth, GroundType, LayoutShape, RunId, Zone } from '../types'
+import { FRAME_WIDTHS, runsForLayout } from '../types'
 
 export interface OpResult {
   ok: boolean
@@ -29,8 +29,25 @@ export function applyOperations(ops: ChatOperation[]): OpResult[] {
             break
           }
           const index = o.index === undefined ? undefined : Number(o.index)
-          s().addFrame(width, index, Boolean(o.lowered))
-          results.push({ ok: true, text: `Added ${o.lowered ? 'smoker table' : 'frame'} ${width} cm` })
+          const run = (o.run as RunId) || 'back'
+          const d = s().design
+          if (run !== 'back' && run !== 'island' && !runsForLayout(d.layout).includes(run)) {
+            results.push({ ok: false, text: `The ${run} wing isn't part of the current layout` })
+            break
+          }
+          if (run === 'island' && !d.island) s().setIsland(true)
+          s().addFrame(width, index, Boolean(o.lowered), run)
+          results.push({ ok: true, text: `Added ${o.lowered ? 'smoker table' : 'frame'} ${width} cm${run !== 'back' ? ` (${run})` : ''}` })
+          break
+        }
+        case 'set_layout': {
+          s().setLayout(o.layout as LayoutShape)
+          results.push({ ok: true, text: `Layout → ${o.layout}` })
+          break
+        }
+        case 'set_island': {
+          s().setIsland(Boolean(o.island))
+          results.push({ ok: true, text: o.island ? 'Added an island' : 'Removed the island' })
           break
         }
         case 'remove_frame': {
@@ -101,7 +118,7 @@ export function applyOperations(ops: ChatOperation[]): OpResult[] {
           const f = frameAt(o.frameIndex)
           if (!f) results.push({ ok: false, text: `No frame #${o.frameIndex}` })
           else {
-            s().moveFrame(f.id, Number(o.toIndex))
+            s().moveFrame(f.id, Number(o.toIndex ?? 0), (o.run as RunId) || undefined)
             results.push({ ok: true, text: `Moved frame ${Number(o.frameIndex) + 1}` })
           }
           break

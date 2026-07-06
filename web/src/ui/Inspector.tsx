@@ -5,6 +5,7 @@ import { FINISHES, frameSpecByWidth, GROUND_TYPES } from '../catalog/frames'
 import { applianceForZone, formatPrice, priceBreakdown, useStore } from '../state/store'
 import { formatLen } from '../units'
 import { useToasts } from './toast'
+import { RUN_NAMES } from '../types'
 import type { ApplianceType, Frame, Zone } from '../types'
 
 export function Inspector() {
@@ -128,7 +129,7 @@ function FramePanel({ frame }: { frame: Frame }) {
       <h2>
         Frame {index + 1}{' '}
         <span className="h-hint">
-          {formatLen(frame.width, unit)} {frame.lowered ? 'smoker table' : 'module'}
+          {formatLen(frame.width, unit)} {frame.lowered ? 'smoker table' : 'module'} · {RUN_NAMES[frame.run ?? 'back']}
         </span>
       </h2>
       <div className="finish-row">

@@ -1,0 +1,27 @@
+import { chromium } from 'playwright'
+const b = await chromium.launch()
+const p = await b.newPage({ viewport: { width: 1720, height: 950 } })
+p.setDefaultTimeout(90000)
+p.on('dialog', (d) => d.accept())
+p.on('pageerror', (e) => console.log('PAGE ERROR:', e.message))
+await p.goto('http://127.0.0.1:3000')
+await p.fill('input[type=password]', 'Ember&Oak-2417')
+await p.click('button[type=submit]')
+await p.waitForSelector('.topbar')
+await p.click('text=✨ Assistant').catch(() => {})
+
+async function shot(preset, file) {
+  await p.click('.topbar >> text=Presets')
+  await p.waitForTimeout(400)
+  await p.click(`text=${preset}`)
+  await p.waitForTimeout(700)
+  await p.keyboard.press('f')
+  await p.waitForTimeout(400)
+  await p.screenshot({ path: `screenshots/${file}`, clip: { x: 280, y: 54, width: 1150, height: 800 } })
+}
+await shot('U-Shape Bar', 'closeup-u.png')
+await shot('Island Entertainer', 'closeup-island.png')
+await shot('L-Shape Social', 'closeup-l.png')
+console.log(await p.evaluate(() => JSON.stringify({ layout: window.__bbq().design.layout, island: window.__bbq().design.island })))
+await b.close()
+console.log('done')

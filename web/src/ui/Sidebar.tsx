@@ -4,6 +4,7 @@ import { toApplianceType, type AiProduct } from '../catalog/aiProducts'
 import { checkPlacement } from '../catalog/compat'
 import { FINISHES, FRAME_SPECS, GROUND_TYPES } from '../catalog/frames'
 import { aiSearchAppliances } from '../auth/api'
+import { groundDepth, type LayoutShape } from '../types'
 import { formatPrice, useStore } from '../state/store'
 import { formatLen } from '../units'
 import { useToasts } from './toast'
@@ -28,18 +29,54 @@ export function Sidebar() {
   )
 }
 
+const LAYOUTS: { id: LayoutShape; name: string; glyph: string }[] = [
+  { id: 'straight', name: 'Straight', glyph: '▬' },
+  { id: 'l-left', name: 'L left', glyph: '⌐' },
+  { id: 'l-right', name: 'L right', glyph: '¬' },
+  { id: 'u', name: 'U shape', glyph: '⊓' },
+]
+
 function BuildTab() {
   const ground = useStore((s) => s.design.ground)
   const frames = useStore((s) => s.design.frames)
+  const layout = useStore((s) => s.design.layout ?? 'straight')
+  const island = useStore((s) => Boolean(s.design.island))
   const setGround = useStore((s) => s.setGround)
+  const setLayout = useStore((s) => s.setLayout)
+  const setIsland = useStore((s) => s.setIsland)
   const addFrame = useStore((s) => s.addFrame)
   const setAllFinishes = useStore((s) => s.setAllFinishes)
   const setDragging = useStore((s) => s.setDragging)
   const unit = useStore((s) => s.unit)
   const [width, setWidth] = useState(ground.width)
+  const [depth, setDepth] = useState(groundDepth(ground))
 
   return (
     <div className="sidebar-body">
+      <section>
+        <h3>Layout</h3>
+        <div className="layout-row">
+          {LAYOUTS.map((l) => (
+            <button
+              key={l.id}
+              className={`layout-chip ${layout === l.id ? 'active' : ''}`}
+              onClick={() => setLayout(l.id)}
+              title={l.name}
+            >
+              <span className="layout-glyph">{l.glyph}</span>
+              {l.name}
+            </button>
+          ))}
+        </div>
+        <label className="check-row" title="A freestanding island counter in front of the main run">
+          <input type="checkbox" checked={island} onChange={(e) => setIsland(e.target.checked)} />
+          <span>Island in front</span>
+        </label>
+        {(layout !== 'straight' || island) && (
+          <p className="hint">Drag frames between runs on the canvas, or drop new ones onto a wing.</p>
+        )}
+      </section>
+
       <section>
         <h3>Ground</h3>
         <div className="ground-types">
@@ -68,6 +105,21 @@ function BuildTab() {
             onChange={(e) => setWidth(Number(e.target.value))}
             onPointerUp={() => setGround({ width })}
             onKeyUp={(e) => (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && setGround({ width })}
+          />
+        </label>
+        <label className="slider-row">
+          <span>
+            Depth <strong>{formatLen(depth, unit)}</strong>
+          </span>
+          <input
+            type="range"
+            min={120}
+            max={1000}
+            step={10}
+            value={depth}
+            onChange={(e) => setDepth(Number(e.target.value))}
+            onPointerUp={() => setGround({ depth })}
+            onKeyUp={(e) => (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && setGround({ depth })}
           />
         </label>
       </section>

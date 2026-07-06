@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import type { Design, FrameFinish, FrameWidth, GroundType, PlacedAppliance, Selection, Zone } from '../types'
+import type { Design, FrameFinish, FrameWidth, GroundType, LayoutShape, PlacedAppliance, RunId, Selection, Zone } from '../types'
+import { runsForLayout } from '../types'
 import { getAppliance, fitsFrame, registerCustomAppliances } from '../catalog/appliances'
 import { checkPlacement } from '../catalog/compat'
 import type { ApplianceType } from '../types'
@@ -13,7 +14,9 @@ export function newId(prefix: string): string {
 export function emptyDesign(): Design {
   return {
     name: 'Untitled kitchen',
-    ground: { type: 'deck', width: 360 },
+    ground: { type: 'deck', width: 420, depth: 320 },
+    layout: 'straight',
+    island: false,
     frames: [],
     appliances: [],
   }
@@ -53,10 +56,12 @@ interface BuilderState {
 
   setDesign: (d: Design, savedId?: number | null) => void
   setName: (name: string) => void
-  setGround: (patch: Partial<{ type: GroundType; width: number }>) => void
-  addFrame: (width: FrameWidth, index?: number, lowered?: boolean) => string
+  setGround: (patch: Partial<{ type: GroundType; width: number; depth: number }>) => void
+  setLayout: (layout: LayoutShape) => void
+  setIsland: (island: boolean) => void
+  addFrame: (width: FrameWidth, index?: number, lowered?: boolean, run?: RunId) => string
   removeFrame: (id: string) => void
-  moveFrame: (id: string, toIndex: number) => void
+  moveFrame: (id: string, toIndex: number, run?: RunId) => void
   setFrameFinish: (id: string, finish: FrameFinish) => void
   setFrameLowered: (id: string, lowered: boolean) => boolean
   setAllFinishes: (finish: FrameFinish) => void
@@ -134,15 +139,40 @@ export const useStore = create<BuilderState>((set, get) => {
       commit((d) => {
         if (patch.type) d.ground.type = patch.type
         if (patch.width !== undefined) d.ground.width = Math.max(100, Math.min(1200, Math.round(patch.width)))
+        if (patch.depth !== undefined) d.ground.depth = Math.max(120, Math.min(1200, Math.round(patch.depth)))
       }),
 
-    addFrame: (width, index, lowered) => {
+    setLayout: (layout) =>
+      commit((d) => {
+        d.layout = layout
+        // frames stranded in removed runs fall back to the back counter
+        const active = new Set(runsForLayout(layout))
+        for (const f of d.frames) {
+          if (f.run && f.run !== 'island' && !active.has(f.run)) f.run = 'back'
+        }
+      }),
+
+    setIsland: (island) =>
+      commit((d) => {
+        d.island = island
+        if (!island) {
+          for (const f of d.frames) if (f.run === 'island') f.run = 'back'
+        }
+      }),
+
+    addFrame: (width, index, lowered, run = 'back') => {
       const id = newId('f')
       commit((d) => {
         const finish = d.frames[0]?.finish ?? 'graphite'
-        const frame = { id, width, finish, ...(lowered ? { lowered: true } : {}) }
-        if (index === undefined || index >= d.frames.length) d.frames.push(frame)
-        else d.frames.splice(Math.max(0, index), 0, frame)
+        const frame = { id, width, finish, ...(lowered ? { lowered: true } : {}), ...(run !== 'back' ? { run } : {}) }
+        // index is within the run; map to a flat-array position
+        const runIdxs = d.frames.map((f, i) => ((f.run ?? 'back') === run ? i : -1)).filter((i) => i >= 0)
+        if (index === undefined || index >= runIdxs.length) {
+          const after = runIdxs.length ? runIdxs[runIdxs.length - 1] + 1 : d.frames.length
+          d.frames.splice(after, 0, frame)
+        } else {
+          d.frames.splice(runIdxs[Math.max(0, index)], 0, frame)
+        }
       })
       set({ selection: { kind: 'frame', id } })
       return id
@@ -172,12 +202,22 @@ export const useStore = create<BuilderState>((set, get) => {
       set({ selection: { kind: 'none' } })
     },
 
-    moveFrame: (id, toIndex) =>
+    moveFrame: (id, toIndex, run) =>
       commit((d) => {
         const from = d.frames.findIndex((f) => f.id === id)
         if (from < 0) return
         const [f] = d.frames.splice(from, 1)
-        d.frames.splice(Math.max(0, Math.min(toIndex, d.frames.length)), 0, f)
+        const targetRun = run ?? f.run ?? 'back'
+        if (targetRun === 'back') delete f.run
+        else f.run = targetRun
+        const runIdxs = d.frames.map((fr, i) => ((fr.run ?? 'back') === targetRun ? i : -1)).filter((i) => i >= 0)
+        const clamped = Math.max(0, Math.min(toIndex, runIdxs.length))
+        if (clamped >= runIdxs.length) {
+          const after = runIdxs.length ? runIdxs[runIdxs.length - 1] + 1 : d.frames.length
+          d.frames.splice(after, 0, f)
+        } else {
+          d.frames.splice(runIdxs[clamped], 0, f)
+        }
       }),
 
     setFrameFinish: (id, finish) =>
@@ -280,13 +320,15 @@ export function priceBreakdown(design: Design, unit: Unit = 'cm'): { lines: Pric
   const lines: PriceLine[] = []
   const g = GROUND_TYPES.find((g) => g.id === design.ground.type)
   if (g) {
-    const meters = design.ground.width / 100
+    const depth = design.ground.depth ?? 300
+    const sqm = (design.ground.width / 100) * (depth / 100)
+    const price = Math.round((g.pricePerM * sqm) / 3)
     lines.push({
       label: g.name,
-      detail: `${formatLen(design.ground.width, unit)} platform`,
+      detail: `${formatLen(design.ground.width, unit)} × ${formatLen(depth, unit)} platform`,
       qty: 1,
-      unit: Math.round(g.pricePerM * meters),
-      total: Math.round(g.pricePerM * meters),
+      unit: price,
+      total: price,
     })
   }
   const frameCounts = new Map<string, number>()
@@ -306,6 +348,17 @@ export function priceBreakdown(design: Design, unit: Unit = 'cm'): { lines: Pric
       qty,
       unit: price,
       total: price * qty,
+    })
+  }
+  const layout = design.layout ?? 'straight'
+  const corners = layout === 'u' ? 2 : layout.startsWith('l-') ? 1 : 0
+  if (corners) {
+    lines.push({
+      label: 'Corner unit',
+      detail: '60 × 60 cm junction cabinet',
+      qty: corners,
+      unit: 350,
+      total: 350 * corners,
     })
   }
   const applCounts = new Map<string, number>()

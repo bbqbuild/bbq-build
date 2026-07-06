@@ -31,7 +31,7 @@ export function zoomStep(factor: number, viewW: number, viewH: number) {
 export function fitTo(bounds: Rect, viewW: number, viewH: number) {
   const pad = 1.16
   const zx = viewW / (bounds.w * pad)
-  const zy = viewH / (bounds.h * pad * 1.3)
+  const zy = viewH / (bounds.h * pad)
   camera.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(zx, zy)))
   camera.x = bounds.x + bounds.w / 2
   camera.y = bounds.y + bounds.h / 2

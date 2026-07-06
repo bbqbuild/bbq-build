@@ -1,30 +1,39 @@
-import type { Design, FrameFinish, Selection } from '../types'
-import { COUNTER_T, FRAME_BODY_H } from '../types'
-import { formatLen, formatLenBare, type Unit } from '../units'
+// Scene compositor: projects each run's offscreen elevation into the oblique
+// view, draws ground + counter tops + plan symbols + smoke + dimensions.
+
+import type { Design, RunId, Selection } from '../types'
+import { COUNTER_T, FRAME_BODY_H, GROUND_T, RUN_DEPTH, frameBodyH, groundDepth } from '../types'
 import { getAppliance } from '../catalog/appliances'
-import { PAINTERS } from './applianceArt'
-import { Ctx, brushLines, dimLine, dimLineV, fillRoundRect, graphite, label, roundRectPath, steel, strokeRoundRect } from './draw'
-import type { ApplianceLayout, FrameLayout, Rect, SceneLayout } from './layout'
+import { Ctx, dimLine, fillRoundRect, label, roundRectPath, strokeRoundRect } from './draw'
+import { renderElevation, drawBlankFront, type ElevationState } from './elevation'
+import type { Rect } from './layout'
+import { KX, KZ, faceTransform, project } from './projection'
+import { ELEV_TOP, computeScene, type CounterTop, type RunScene, type SceneLayout3 } from './scene'
+import { formatLen, type Unit } from '../units'
 
 export interface Camera {
-  /** world coords (cm) at the viewport centre */
   x: number
   y: number
-  /** pixels per cm */
   zoom: number
+}
+
+export interface FrameDragState {
+  frameId: string
+  /** run currently under the pointer */
+  runId: RunId
+  /** run-local insertion u */
+  u: number
 }
 
 export interface RenderState {
   design: Design
-  layout: SceneLayout
+  scene: SceneLayout3
   selection: Selection
   hoveredFrameId: string | null
   hoveredApplianceId: string | null
-  /** frame ids that can accept the appliance currently dragged from the catalog */
   dropTargets: Set<string> | null
   activeDropTarget: string | null
-  /** live frame-reorder drag: frame follows the pointer */
-  frameDrag: { frameId: string; worldX: number } | null
+  frameDrag: FrameDragState | null
   showDims: boolean
   showGrid: boolean
   unit: Unit
@@ -35,69 +44,53 @@ export interface RenderState {
   dpr: number
 }
 
-const ACCENT = '#f59e0b'
+const SMOKY_TYPES = /^(grill-|santamaria-|egg-|primo-)/
+
+// offscreen elevation canvases, cached per run
+const offscreens = new Map<RunId, HTMLCanvasElement>()
+
+function offscreenFor(id: RunId, wPx: number, hPx: number): HTMLCanvasElement {
+  let c = offscreens.get(id)
+  if (!c) {
+    c = document.createElement('canvas')
+    offscreens.set(id, c)
+  }
+  if (c.width !== wPx || c.height !== hPx) {
+    c.width = wPx
+    c.height = hPx
+  }
+  return c
+}
 
 export function renderScene(ctx: Ctx, s: RenderState) {
   const { width: W, height: H, dpr, camera } = s
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   drawBackground(ctx, W, H)
 
-  // world transform
+  // world transform (world-screen cm → device px)
   const scale = camera.zoom
   ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * (W / 2 - camera.x * scale), dpr * (H / 2 - camera.y * scale))
 
   if (s.showGrid) drawGrid(ctx, s)
-
-  drawSceneShadow(ctx, s.layout)
   drawGround(ctx, s)
 
-  if (!s.design.frames.length) {
-    drawEmptyHint(ctx, s)
-  }
+  if (!s.design.frames.length) drawEmptyHint(ctx, s)
 
-  // frames (bodies + base appliances), skipping the dragged frame so it can be drawn on top
-  const draggedId = s.frameDrag?.frameId ?? null
-  for (const fl of s.layout.frames) {
-    if (fl.frame.id === draggedId) continue
-    drawFrame(ctx, s, fl, 0)
-  }
-
-  for (const c of s.layout.counters) drawCounter(ctx, c)
-
-  for (const al of s.layout.appliances) {
-    if (al.frame.frame.id === draggedId) continue
-    drawAppliance(ctx, s, al, 0)
-  }
-
-  // dragged frame rendered last, floating at the pointer
-  if (draggedId) {
-    const fl = s.layout.frames.find((f) => f.frame.id === draggedId)
-    if (fl) {
-      const dx = s.frameDrag!.worldX - (fl.body.x + fl.body.w / 2)
-      ctx.save()
-      ctx.globalAlpha = 0.88
-      drawFrame(ctx, s, fl, dx)
-      // its own counter chunk
-      const c: Rect = { x: fl.body.x + dx - 1.5, y: fl.counterTopY, w: fl.body.w + 3, h: COUNTER_T }
-      drawCounter(ctx, c)
-      for (const al of s.layout.appliances.filter((a) => a.frame.frame.id === draggedId)) {
-        drawAppliance(ctx, s, al, dx)
-      }
-      ctx.restore()
-    }
+  const pxPerCm = Math.min(8, Math.max(2.5, camera.zoom * dpr))
+  const runs = [...s.scene.runs].sort((a, b) => a.depth - b.depth)
+  for (const run of runs) {
+    drawRun(ctx, s, run, pxPerCm)
   }
 
   drawSmoke(ctx, s)
-  drawOverlays(ctx, s)
-  if (s.showDims) drawDimensions(ctx, s)
+  if (s.showDims) drawGroundDims(ctx, s)
 
-  // warning if frames overflow the ground
-  if (s.layout.overflow) {
+  if (s.scene.overflow) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.font = '600 12px Inter, system-ui, sans-serif'
     ctx.textAlign = 'center'
     ctx.fillStyle = '#fca5a5'
-    ctx.fillText('⚠ Frames are wider than the ground platform — widen the ground', W / 2, H - 18)
+    ctx.fillText('⚠ The kitchen is larger than the ground platform — enlarge the ground', W / 2, H - 18)
   }
 }
 
@@ -110,7 +103,6 @@ function drawBackground(ctx: Ctx, W: number, H: number) {
   g.addColorStop(1, '#20242c')
   ctx.fillStyle = g
   ctx.fillRect(0, 0, W, H)
-  // soft radial spotlight in the centre
   const r = ctx.createRadialGradient(W / 2, H * 0.45, 40, W / 2, H * 0.45, Math.max(W, H) * 0.7)
   r.addColorStop(0, 'rgba(255,244,224,0.05)')
   r.addColorStop(1, 'rgba(0,0,0,0)')
@@ -119,7 +111,7 @@ function drawBackground(ctx: Ctx, W: number, H: number) {
 }
 
 function drawGrid(ctx: Ctx, s: RenderState) {
-  const step = 20 // cm
+  const step = 20
   const halfW = s.width / 2 / s.camera.zoom
   const halfH = s.height / 2 / s.camera.zoom
   const x0 = Math.floor((s.camera.x - halfW) / step) * step
@@ -140,404 +132,379 @@ function drawGrid(ctx: Ctx, s: RenderState) {
   ctx.stroke()
 }
 
-function drawSceneShadow(ctx: Ctx, layout: SceneLayout) {
-  const g = layout.ground
-  const cy = g.y + g.h + 6
-  const grad = ctx.createRadialGradient(0, cy, 1, 0, cy, g.w * 0.62)
-  grad.addColorStop(0, 'rgba(0,0,0,0.5)')
-  grad.addColorStop(1, 'rgba(0,0,0,0)')
-  ctx.save()
-  ctx.translate(0, cy)
-  ctx.scale(1, 0.08)
-  ctx.translate(0, -cy)
-  ctx.fillStyle = grad
-  ctx.beginPath()
-  ctx.arc(0, cy, g.w * 0.62, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.restore()
-}
-
 // ---------- ground ----------
 
+/** Apply the plan transform: plan (x,z) at height y → world-screen. */
+function planTransform(ctx: Ctx, y: number, mirror = false) {
+  ctx.transform(1, 0, mirror ? -KX : KX, KZ, 0, -y)
+}
+
 function drawGround(ctx: Ctx, s: RenderState) {
-  const g = s.layout.ground
+  const g = s.scene.ground
   const type = s.design.ground.type
   const selected = s.selection.kind === 'ground'
 
+  // soft shadow under the slab
+  const front = project(g.x + g.w / 2, g.z + g.d, -GROUND_T)
+  const grad = ctx.createRadialGradient(front.x, front.y + 4, 1, front.x, front.y + 4, g.w * 0.6)
+  grad.addColorStop(0, 'rgba(0,0,0,0.4)')
+  grad.addColorStop(1, 'rgba(0,0,0,0)')
+  ctx.save()
+  ctx.translate(front.x, front.y + 6)
+  ctx.scale(1, 0.1)
+  ctx.fillStyle = grad
+  ctx.beginPath()
+  ctx.arc(0, 0, g.w * 0.62, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.restore()
+
+  // top surface (plan space)
+  ctx.save()
+  planTransform(ctx, 0)
   if (type === 'deck') {
-    // stacked plank faces
-    const plankH = g.h / 2
-    for (let i = 0; i < 2; i++) {
-      const y = g.y + i * plankH
-      const grad = ctx.createLinearGradient(0, y, 0, y + plankH)
-      grad.addColorStop(0, i === 0 ? '#8a5f3c' : '#77502f')
-      grad.addColorStop(1, i === 0 ? '#6d4a2c' : '#5d3f26')
-      fillRoundRect(ctx, g.x, y, g.w, plankH - 0.8, 0.8, grad)
-      // board joints
-      ctx.strokeStyle = 'rgba(0,0,0,0.35)'
-      ctx.lineWidth = 0.5
-      const seg = 60
-      for (let x = g.x + seg / 2 + i * seg * 0.5; x < g.x + g.w; x += seg) {
-        ctx.beginPath()
-        ctx.moveTo(x, y + 1)
-        ctx.lineTo(x, y + plankH - 2)
-        ctx.stroke()
-      }
+    ctx.fillStyle = '#7c552f'
+    ctx.fillRect(g.x, g.z, g.w, g.d)
+    // planks along x
+    for (let z = g.z; z < g.z + g.d; z += 14) {
+      const shade = 0.9 + 0.12 * Math.sin(z * 12.9898)
+      ctx.fillStyle = `rgb(${Math.round(134 * shade)}, ${Math.round(92 * shade)}, ${Math.round(58 * shade)})`
+      ctx.fillRect(g.x, z, g.w, Math.min(12.6, g.z + g.d - z))
+      // butt joints
+      ctx.fillStyle = 'rgba(0,0,0,0.25)'
+      const off = (Math.floor(z / 14) % 2) * 45
+      for (let x = g.x + 30 + off; x < g.x + g.w; x += 90) ctx.fillRect(x, z, 1, 12.6)
     }
   } else if (type === 'concrete') {
-    const grad = ctx.createLinearGradient(0, g.y, 0, g.y + g.h)
-    grad.addColorStop(0, '#9b9d9e')
-    grad.addColorStop(1, '#7c7e80')
-    fillRoundRect(ctx, g.x, g.y, g.w, g.h, 1, grad)
-    ctx.strokeStyle = 'rgba(0,0,0,0.18)'
-    ctx.lineWidth = 0.5
+    const cg = ctx.createLinearGradient(g.x, g.z, g.x, g.z + g.d)
+    cg.addColorStop(0, '#8f9192')
+    cg.addColorStop(1, '#7c7e80')
+    ctx.fillStyle = cg
+    ctx.fillRect(g.x, g.z, g.w, g.d)
+    ctx.strokeStyle = 'rgba(0,0,0,0.15)'
+    ctx.lineWidth = 0.8
     for (let x = g.x + 90; x < g.x + g.w; x += 90) {
       ctx.beginPath()
-      ctx.moveTo(x, g.y + 1)
-      ctx.lineTo(x, g.y + g.h - 1)
+      ctx.moveTo(x, g.z + 1)
+      ctx.lineTo(x, g.z + g.d - 1)
+      ctx.stroke()
+    }
+    for (let z = g.z + 90; z < g.z + g.d; z += 90) {
+      ctx.beginPath()
+      ctx.moveTo(g.x + 1, z)
+      ctx.lineTo(g.x + g.w - 1, z)
       ctx.stroke()
     }
   } else if (type === 'pavers') {
-    fillRoundRect(ctx, g.x, g.y, g.w, g.h, 1, '#5a5e63')
+    ctx.fillStyle = '#54585d'
+    ctx.fillRect(g.x, g.z, g.w, g.d)
     const tile = 40
-    for (let i = 0; i < 2; i++) {
-      const y = g.y + (i * g.h) / 2
-      for (let x = g.x + ((i % 2) * tile) / 2; x < g.x + g.w; x += tile) {
+    let rowIdx = 0
+    for (let z = g.z; z < g.z + g.d; z += tile, rowIdx++) {
+      for (let x = g.x + ((rowIdx % 2) * tile) / 2 - tile / 2; x < g.x + g.w; x += tile) {
         const w = Math.min(tile - 2, g.x + g.w - x - 1)
-        if (w > 2) fillRoundRect(ctx, x + 1, y + 1, w, g.h / 2 - 2, 0.8, i % 2 ? '#75797f' : '#7d8187')
+        const d = Math.min(tile - 2, g.z + g.d - z - 1)
+        if (w > 2 && d > 2 && x >= g.x) fillRoundRect(ctx, x + 1, z + 1, w, d, 1, rowIdx % 2 ? '#75797f' : '#7d8187')
       }
     }
   } else {
-    // natural stone
-    fillRoundRect(ctx, g.x, g.y, g.w, g.h, 1, '#57534e')
-    let x = g.x + 2
+    ctx.fillStyle = '#4f4b46'
+    ctx.fillRect(g.x, g.z, g.w, g.d)
+    let z = g.z + 2
     let flip = false
-    while (x < g.x + g.w - 3) {
-      const w = flip ? 34 : 24
-      const ww = Math.min(w, g.x + g.w - x - 2)
-      fillRoundRect(ctx, x, g.y + 1.5, ww, g.h - 3, 2.5, flip ? '#6f6a63' : '#7d766d')
-      x += ww + 2.5
-      flip = !flip
+    while (z < g.z + g.d - 4) {
+      let x = g.x + 2 + (flip ? 14 : 0)
+      const dRow = 26 + (flip ? 8 : 0)
+      while (x < g.x + g.w - 3) {
+        const w = flip ? 36 : 28
+        const ww = Math.min(w, g.x + g.w - x - 2)
+        const dd = Math.min(dRow, g.z + g.d - z - 2)
+        if (ww > 4 && dd > 4) fillRoundRect(ctx, x, z, ww, dd, 3, flip ? '#6f6a63' : '#7d766d')
+        x += ww + 3
+        flip = !flip
+      }
+      z += dRow + 3
     }
   }
+  ctx.restore()
 
-  // top edge highlight
-  ctx.strokeStyle = 'rgba(255,255,255,0.22)'
+  // front face (1:1)
+  const fz = g.z + g.d
+  const p0 = project(g.x, fz, 0)
+  const faceG = ctx.createLinearGradient(0, p0.y, 0, p0.y + GROUND_T)
+  if (type === 'deck') {
+    faceG.addColorStop(0, '#6d4a2c')
+    faceG.addColorStop(1, '#4a3220')
+  } else if (type === 'concrete') {
+    faceG.addColorStop(0, '#6f7173')
+    faceG.addColorStop(1, '#55575a')
+  } else if (type === 'pavers') {
+    faceG.addColorStop(0, '#54585d')
+    faceG.addColorStop(1, '#3c4045')
+  } else {
+    faceG.addColorStop(0, '#57534e')
+    faceG.addColorStop(1, '#3d3a36')
+  }
+  ctx.fillStyle = faceG
+  ctx.fillRect(p0.x, p0.y, g.w, GROUND_T)
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)'
   ctx.lineWidth = 0.6
   ctx.beginPath()
-  ctx.moveTo(g.x, g.y + 0.3)
-  ctx.lineTo(g.x + g.w, g.y + 0.3)
+  ctx.moveTo(p0.x, p0.y + 0.3)
+  ctx.lineTo(p0.x + g.w, p0.y + 0.3)
   ctx.stroke()
+
+  // right side face (sheared)
+  ctx.save()
+  ctx.beginPath()
+  const r0 = project(g.x + g.w, g.z, 0)
+  const r1 = project(g.x + g.w, fz, 0)
+  ctx.moveTo(r0.x, r0.y)
+  ctx.lineTo(r1.x, r1.y)
+  ctx.lineTo(r1.x, r1.y + GROUND_T)
+  ctx.lineTo(r0.x, r0.y + GROUND_T)
+  ctx.closePath()
+  ctx.fillStyle = 'rgba(0,0,0,0.38)'
+  ctx.fill()
+  ctx.restore()
 
   if (selected) {
-    strokeRoundRect(ctx, g.x - 1.5, g.y - 1.5, g.w + 3, g.h + 3, 2, ACCENT, 1.2)
-  }
-}
-
-// ---------- frames ----------
-
-function finishFill(ctx: Ctx, finish: FrameFinish, y0: number, y1: number): string | CanvasGradient {
-  switch (finish) {
-    case 'steel':
-      return steel(ctx, y0, y1)
-    case 'graphite':
-      return graphite(ctx, y0, y1)
-    case 'teak': {
-      const g = ctx.createLinearGradient(0, y0, 0, y1)
-      g.addColorStop(0, '#a5754b')
-      g.addColorStop(0.5, '#8f6138')
-      g.addColorStop(1, '#7a5230')
-      return g
-    }
-    case 'stone': {
-      const g = ctx.createLinearGradient(0, y0, 0, y1)
-      g.addColorStop(0, '#7a766f')
-      g.addColorStop(1, '#5f5b55')
-      return g
-    }
-  }
-}
-
-function drawFrame(ctx: Ctx, s: RenderState, fl: FrameLayout, dx: number) {
-  const b = { ...fl.body, x: fl.body.x + dx }
-  const o = { ...fl.opening, x: fl.opening.x + dx }
-  const finish = fl.frame.finish
-
-  // body
-  fillRoundRect(ctx, b.x, b.y, b.w, b.h, [0, 0, 1.5, 1.5], finishFill(ctx, finish, b.y, b.y + b.h))
-  if (finish === 'steel') brushLines(ctx, b.x, b.y, b.w, b.h, 0.04)
-  if (finish === 'teak') {
-    // horizontal slats
-    ctx.strokeStyle = 'rgba(40,24,10,0.4)'
-    ctx.lineWidth = 0.6
-    for (let y = b.y + 8; y < b.y + b.h - 4; y += 8) {
-      ctx.beginPath()
-      ctx.moveTo(b.x + 1, y)
-      ctx.lineTo(b.x + b.w - 1, y)
-      ctx.stroke()
-    }
-  }
-  if (finish === 'stone') {
-    ctx.strokeStyle = 'rgba(25,22,18,0.35)'
-    ctx.lineWidth = 0.6
-    for (let i = 0; i < 3; i++) {
-      const y = b.y + ((i + 1) * b.h) / 4
-      ctx.beginPath()
-      ctx.moveTo(b.x + 1, y)
-      ctx.lineTo(b.x + b.w - 1, y)
-      ctx.stroke()
-    }
-    for (let i = 0; i < 4; i++) {
-      const y0 = b.y + (i * b.h) / 4
-      const x = b.x + b.w * (0.3 + 0.4 * ((i * 13) % 2))
-      ctx.beginPath()
-      ctx.moveTo(x, y0 + 1)
-      ctx.lineTo(x, y0 + b.h / 4 - 1)
-      ctx.stroke()
-    }
-  }
-
-  // inner opening (cavity)
-  const cav = ctx.createLinearGradient(0, o.y, 0, o.y + o.h)
-  cav.addColorStop(0, '#0c0e11')
-  cav.addColorStop(1, '#191d22')
-  fillRoundRect(ctx, o.x, o.y, o.w, o.h, 1, cav)
-  // cavity inner shadow
-  ctx.strokeStyle = 'rgba(0,0,0,0.5)'
-  strokeRoundRect(ctx, o.x + 0.4, o.y + 0.4, o.w - 0.8, o.h - 0.8, 1, 'rgba(0,0,0,0.5)', 0.8)
-
-  // toe kick shadow line
-  ctx.strokeStyle = 'rgba(0,0,0,0.3)'
-  ctx.lineWidth = 0.5
-  ctx.beginPath()
-  ctx.moveTo(b.x + 1, b.y + b.h - 0.6)
-  ctx.lineTo(b.x + b.w - 1, b.y + b.h - 0.6)
-  ctx.stroke()
-
-  // seam between adjacent frames
-  ctx.strokeStyle = 'rgba(0,0,0,0.4)'
-  ctx.lineWidth = 0.5
-  ctx.beginPath()
-  ctx.moveTo(b.x + 0.3, b.y + 1)
-  ctx.lineTo(b.x + 0.3, b.y + b.h - 1)
-  ctx.stroke()
-
-  // empty base slot hint
-  const hasBase = s.design.appliances.some((a) => a.frameId === fl.frame.id && a.zone === 'base')
-  if (!hasBase) {
     ctx.save()
-    ctx.setLineDash([2.5, 2.5])
-    strokeRoundRect(ctx, o.x + 2, o.y + 2, o.w - 4, o.h - 4, 1, 'rgba(148,163,184,0.28)', 0.7)
+    ctx.beginPath()
+    const c0 = project(g.x, g.z, 0)
+    const c1 = project(g.x + g.w, g.z, 0)
+    const c2 = project(g.x + g.w, fz, 0)
+    const c3 = project(g.x, fz, 0)
+    ctx.moveTo(c0.x, c0.y)
+    ctx.lineTo(c1.x, c1.y)
+    ctx.lineTo(c2.x, c2.y)
+    ctx.lineTo(c3.x, c3.y)
+    ctx.closePath()
+    ctx.strokeStyle = '#f59e0b'
+    ctx.lineWidth = 1.4
+    ctx.stroke()
     ctx.restore()
-    label(ctx, '+', o.x + o.w / 2, o.y + o.h / 2, 10, 'rgba(148,163,184,0.4)')
   }
 }
 
-// ---------- counter ----------
+// ---------- runs ----------
 
-function drawCounter(ctx: Ctx, c: Rect) {
-  const g = ctx.createLinearGradient(0, c.y, 0, c.y + c.h)
-  g.addColorStop(0, '#e6e1d6')
-  g.addColorStop(0.25, '#d9d3c6')
-  g.addColorStop(1, '#b3ac9c')
-  fillRoundRect(ctx, c.x, c.y, c.w, c.h, 1.2, g)
-  // polished top highlight
-  ctx.strokeStyle = 'rgba(255,255,255,0.65)'
-  ctx.lineWidth = 0.7
-  ctx.beginPath()
-  ctx.moveTo(c.x + 0.6, c.y + 0.5)
-  ctx.lineTo(c.x + c.w - 0.6, c.y + 0.5)
-  ctx.stroke()
-  // drip edge
-  ctx.strokeStyle = 'rgba(0,0,0,0.25)'
-  ctx.lineWidth = 0.5
-  ctx.beginPath()
-  ctx.moveTo(c.x + 0.6, c.y + c.h - 0.5)
-  ctx.lineTo(c.x + c.w - 0.6, c.y + c.h - 0.5)
-  ctx.stroke()
+function drawRun(ctx: Ctx, s: RenderState, run: RunScene, pxPerCm: number) {
+  // 1) elevation face
+  if (run.frames.length) {
+    const wPx = Math.ceil(run.elev.len * pxPerCm) + 2
+    const hPx = Math.ceil(ELEV_TOP * pxPerCm) + 2
+    const off = offscreenFor(run.id, wPx, hPx)
+    const octx = off.getContext('2d')!
+    const es: ElevationState = {
+      runId: run.id,
+      elev: run.elev,
+      selection: s.selection,
+      hoveredFrameId: s.hoveredFrameId,
+      hoveredApplianceId: s.hoveredApplianceId,
+      dropTargets: s.dropTargets,
+      activeDropTarget: s.activeDropTarget,
+      dragFrameId: s.frameDrag?.frameId ?? null,
+      insertionU: s.frameDrag && s.frameDrag.runId === run.id ? s.frameDrag.u : null,
+      showDims: s.showDims,
+      unit: s.unit,
+      time: s.time,
+    }
+    renderElevation(octx, es, pxPerCm)
+    const t = faceTransform(run.face, run.mirror)
+    ctx.save()
+    ctx.transform(t.a, t.b, t.c, t.d, t.e, t.f)
+    ctx.scale(1 / pxPerCm, 1 / pxPerCm)
+    ctx.drawImage(off, 0, 0)
+    ctx.restore()
+  }
+
+  // 2) end cap (side runs) — front-facing blank cabinet side
+  if (run.endCap && run.frames.length) {
+    const lastFrame = run.endCap.frame
+    const t = faceTransform(run.endCap.face, run.mirror)
+    ctx.save()
+    ctx.transform(t.a, t.b, t.c, t.d, t.e, t.f)
+    const h = lastFrame ? frameBodyH(lastFrame) : FRAME_BODY_H
+    drawBlankFront(ctx, lastFrame?.finish ?? 'graphite', { x: 0, y: ELEV_TOP - h, w: RUN_DEPTH, h })
+    // counter edge on the cap
+    const cg = ctx.createLinearGradient(0, ELEV_TOP - h - COUNTER_T, 0, ELEV_TOP - h)
+    cg.addColorStop(0, '#e0dbd0')
+    cg.addColorStop(1, '#b3ac9c')
+    fillRoundRect(ctx, -3, ELEV_TOP - h - COUNTER_T, RUN_DEPTH + 3, COUNTER_T, 1, cg)
+    ctx.restore()
+  }
+
+  // 3) counter top faces for this run
+  for (const top of s.scene.counterTops.filter((t) => t.runId === run.id)) {
+    drawCounterTop(ctx, s, top)
+  }
 }
 
-// ---------- appliances ----------
+function drawCounterTop(ctx: Ctx, s: RenderState, top: CounterTop) {
+  ctx.save()
+  planTransform(ctx, top.y, top.mirror)
+  const g = ctx.createLinearGradient(0, top.z, 0, top.z + top.d)
+  g.addColorStop(0, '#cfc9bb')
+  g.addColorStop(1, '#e8e3d8')
+  ctx.fillStyle = g
+  ctx.fillRect(top.x, top.z, top.w, top.d)
+  ctx.strokeStyle = 'rgba(90,80,60,0.25)'
+  ctx.lineWidth = 0.5
+  ctx.strokeRect(top.x + 0.25, top.z + 0.25, top.w - 0.5, top.d - 0.5)
 
-function drawAppliance(ctx: Ctx, s: RenderState, al: ApplianceLayout, dx: number) {
-  let painter = PAINTERS[al.placed.typeId]
-  if (!painter) {
-    // AI-sourced products borrow a built-in painter
-    try {
-      const paintAs = getAppliance(al.placed.typeId).paintAs
-      if (paintAs) painter = PAINTERS[paintAs]
-    } catch {
-      return
+  // plan symbols for the counter-level appliances of this run
+  const run = s.scene.runs.find((r) => r.id === top.runId)
+  if (run) {
+    for (const al of run.elev.appliances) {
+      if (al.placed.zone !== 'top') continue
+      const surfaceY = -al.frame.counterTopY
+      if (Math.abs(surfaceY - top.y) > 0.01) continue
+      // run-local u → plan within this top rect
+      const horizontal = run.face.dir.x !== 0
+      const u0 = al.rect.x + 1
+      const u1 = al.rect.x + al.rect.w - 1
+      let px: number, pz: number, pw: number, pd: number
+      if (horizontal) {
+        px = run.face.origin.x + u0
+        pw = u1 - u0
+        pz = run.plan.z + 7
+        pd = RUN_DEPTH - 16
+      } else {
+        pz = run.face.origin.z + u0
+        pd = u1 - u0
+        px = run.plan.x + 7
+        pw = RUN_DEPTH - 16
+      }
+      if (px < top.x || px + pw > top.x + top.w + 1 || pz < top.z - 1 || pz + pd > top.z + top.d + 1) {
+        // symbol may live on a different segment; clamp lightly
+      }
+      const type = (() => {
+        try {
+          return getAppliance(al.placed.typeId)
+        } catch {
+          return null
+        }
+      })()
+      if (!type) continue
+      const base = type.paintAs ?? type.id
+      if (type.mount === 'kamado') {
+        const cx = px + pw / 2
+        const cz = pz + pd / 2
+        const r = Math.min(pw, pd) / 2
+        ctx.beginPath()
+        ctx.arc(cx, cz, r, 0, Math.PI * 2)
+        ctx.fillStyle = base.startsWith('egg') ? '#2f6a3c' : '#2e3237'
+        ctx.fill()
+        ctx.beginPath()
+        ctx.arc(cx, cz, r * 0.55, 0, Math.PI * 2)
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)'
+        ctx.lineWidth = 1
+        ctx.stroke()
+        continue
+      }
+      // generic drop-in inset
+      roundRectPath(ctx, px, pz, pw, pd, 3)
+      const ig = ctx.createLinearGradient(0, pz, 0, pz + pd)
+      ig.addColorStop(0, '#23272c')
+      ig.addColorStop(1, '#3a3f45')
+      ctx.fillStyle = ig
+      ctx.fill()
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)'
+      ctx.lineWidth = 0.6
+      ctx.stroke()
+      if (/^(grill|santamaria|griddle|burner)/.test(base)) {
+        ctx.strokeStyle = 'rgba(150,158,166,0.55)'
+        ctx.lineWidth = 0.8
+        const lines = Math.max(3, Math.floor(pw / 9))
+        for (let i = 1; i < lines; i++) {
+          const lx = px + (pw * i) / lines
+          ctx.beginPath()
+          ctx.moveTo(lx, pz + 2)
+          ctx.lineTo(lx, pz + pd - 2)
+          ctx.stroke()
+        }
+      } else if (base.startsWith('sink')) {
+        fillRoundRect(ctx, px + pw * 0.2, pz + pd * 0.2, pw * 0.6, pd * 0.6, 2, '#5a6268')
+      } else if (base.startsWith('pizza')) {
+        fillRoundRect(ctx, px + 2, pz + 2, pw - 4, pd - 4, 4, '#8d949b')
+      }
     }
   }
-  if (!painter) return
-  const r = { ...al.rect, x: al.rect.x + dx }
-  painter(ctx, r, { counterY: al.frame.counterTopY, counterH: COUNTER_T, time: s.time })
+  ctx.restore()
 }
 
 // ---------- smoke ----------
 
-const SMOKY_TYPES = /^(grill-|santamaria-|egg-|primo-)/
-
 function drawSmoke(ctx: Ctx, s: RenderState) {
-  const grills = s.layout.appliances.filter((a) => SMOKY_TYPES.test(a.placed.typeId))
-  for (const g of grills) {
-    if (s.frameDrag && g.frame.frame.id === s.frameDrag.frameId) continue
-    const originX = g.rect.x + g.rect.w * 0.72
-    const originY = g.rect.y + 1
-    for (let k = 0; k < 4; k++) {
-      const t = (s.time * 0.1 + k / 4 + g.rect.x * 0.001) % 1
-      const y = originY - t * 46
-      const x = originX + Math.sin(t * 5 + k * 2.1) * (3 + t * 7)
-      const alpha = (1 - t) * 0.09
-      const rad = 2.5 + t * 6
-      ctx.beginPath()
-      ctx.arc(x, y, rad, 0, Math.PI * 2)
-      ctx.fillStyle = `rgba(220,225,232,${alpha.toFixed(3)})`
-      ctx.fill()
-    }
-  }
-}
-
-// ---------- overlays ----------
-
-function frameFullRect(fl: FrameLayout): Rect {
-  return { x: fl.body.x - 1, y: fl.counterTopY - 1, w: fl.body.w + 2, h: fl.body.h + COUNTER_T + 2 }
-}
-
-function drawOverlays(ctx: Ctx, s: RenderState) {
-  // hover
-  if (s.hoveredFrameId && (s.selection.kind !== 'frame' || s.selection.id !== s.hoveredFrameId) && !s.dropTargets) {
-    const fl = s.layout.frames.find((f) => f.frame.id === s.hoveredFrameId)
-    if (fl && fl.frame.id !== s.frameDrag?.frameId) {
-      const r = frameFullRect(fl)
-      strokeRoundRect(ctx, r.x, r.y, r.w, r.h, 2, 'rgba(245,158,11,0.4)', 0.8)
-    }
-  }
-
-  // selection
-  if (s.selection.kind === 'frame') {
-    const fl = s.layout.frames.find((f) => f.frame.id === (s.selection as { id: string }).id)
-    if (fl) {
-      const r = frameFullRect(fl)
-      ctx.save()
-      ctx.shadowColor = 'rgba(245,158,11,0.55)'
-      ctx.shadowBlur = 10
-      strokeRoundRect(ctx, r.x, r.y, r.w, r.h, 2, ACCENT, 1.3)
-      ctx.restore()
-    }
-  } else if (s.selection.kind === 'appliance') {
-    const al = s.layout.appliances.find((a) => a.placed.id === (s.selection as { id: string }).id)
-    if (al) {
-      ctx.save()
-      ctx.shadowColor = 'rgba(245,158,11,0.55)'
-      ctx.shadowBlur = 8
-      strokeRoundRect(ctx, al.rect.x - 1.2, al.rect.y - 1.2, al.rect.w + 2.4, al.rect.h + 2.4, 2, ACCENT, 1.2)
-      ctx.restore()
-    }
-  }
-
-  // hovered appliance
-  if (s.hoveredApplianceId && !s.dropTargets) {
-    const al = s.layout.appliances.find((a) => a.placed.id === s.hoveredApplianceId)
-    if (al && !(s.selection.kind === 'appliance' && s.selection.id === s.hoveredApplianceId)) {
-      strokeRoundRect(ctx, al.rect.x - 1, al.rect.y - 1, al.rect.w + 2, al.rect.h + 2, 2, 'rgba(245,158,11,0.4)', 0.8)
-    }
-  }
-
-  // drag-from-catalog drop targets
-  if (s.dropTargets) {
-    const pulse = 0.55 + 0.3 * Math.sin(s.time * 5)
-    for (const fl of s.layout.frames) {
-      const ok = s.dropTargets.has(fl.frame.id)
-      const r = frameFullRect(fl)
-      if (!ok) {
-        ctx.fillStyle = 'rgba(10,12,15,0.45)'
-        roundRectPath(ctx, r.x, r.y, r.w, r.h, 2)
+  for (const run of s.scene.runs) {
+    const t = faceTransform(run.face, run.mirror)
+    for (const al of run.elev.appliances) {
+      if (!SMOKY_TYPES.test(al.placed.typeId) && !SMOKY_TYPES.test((() => {
+        try {
+          return getAppliance(al.placed.typeId).paintAs ?? ''
+        } catch {
+          return ''
+        }
+      })())) continue
+      if (s.frameDrag?.frameId === al.frame.frame.id) continue
+      const u = al.rect.x + al.rect.w * 0.72
+      const yDown = al.rect.y + ELEV_TOP + 1
+      const ox = t.e + u * t.a
+      const oy = t.f + u * t.b + yDown
+      for (let k = 0; k < 4; k++) {
+        const tt = (s.time * 0.1 + k / 4 + u * 0.001) % 1
+        const y = oy - tt * 46
+        const x = ox + Math.sin(tt * 5 + k * 2.1) * (3 + tt * 7)
+        const alpha = (1 - tt) * 0.09
+        ctx.beginPath()
+        ctx.arc(x, y, 2.5 + tt * 6, 0, Math.PI * 2)
+        ctx.fillStyle = `rgba(220,225,232,${alpha.toFixed(3)})`
         ctx.fill()
-        continue
       }
-      ctx.save()
-      if (fl.frame.id === s.activeDropTarget) {
-        ctx.fillStyle = `rgba(245,158,11,0.16)`
-        roundRectPath(ctx, r.x, r.y, r.w, r.h, 2)
-        ctx.fill()
-        ctx.shadowColor = 'rgba(245,158,11,0.7)'
-        ctx.shadowBlur = 12
-        strokeRoundRect(ctx, r.x, r.y, r.w, r.h, 2, ACCENT, 1.5)
-      } else {
-        ctx.setLineDash([4, 3])
-        strokeRoundRect(ctx, r.x, r.y, r.w, r.h, 2, `rgba(245,158,11,${pulse.toFixed(2)})`, 1)
-      }
-      ctx.restore()
-    }
-  }
-
-  // frame reorder insertion marker
-  if (s.frameDrag) {
-    const fl = s.layout.frames.find((f) => f.frame.id === s.frameDrag!.frameId)
-    if (fl) {
-      // marker at insertion position
-      let x = -s.layout.rowWidth / 2
-      for (const other of s.layout.frames) {
-        if (other.frame.id === fl.frame.id) continue
-        if (s.frameDrag.worldX > other.body.x + other.body.w / 2) x = other.body.x + other.body.w
-      }
-      ctx.strokeStyle = ACCENT
-      ctx.lineWidth = 1.4
-      ctx.setLineDash([3, 3])
-      ctx.beginPath()
-      ctx.moveTo(x, -FRAME_BODY_H - COUNTER_T - 12)
-      ctx.lineTo(x, 6)
-      ctx.stroke()
-      ctx.setLineDash([])
     }
   }
 }
+
+// ---------- hints & dims ----------
 
 function drawEmptyHint(ctx: Ctx, s: RenderState) {
   const w = 90
-  const r: Rect = { x: -w / 2, y: -FRAME_BODY_H, w, h: FRAME_BODY_H }
+  const p = project(-w / 2, RUN_DEPTH, 0)
+  const r: Rect = { x: p.x, y: p.y - FRAME_BODY_H, w, h: FRAME_BODY_H }
   ctx.save()
   ctx.setLineDash([5, 4])
   strokeRoundRect(ctx, r.x, r.y, r.w, r.h, 2, 'rgba(148,163,184,0.35)', 1)
   ctx.restore()
-  label(ctx, 'Add a frame to start building', 0, r.y + r.h / 2 - 6, 7, 'rgba(148,163,184,0.7)')
-  label(ctx, '(or pick a preset)', 0, r.y + r.h / 2 + 6, 6, 'rgba(148,163,184,0.45)')
+  label(ctx, 'Add a frame to start building', r.x + w / 2, r.y + r.h / 2 - 6, 7, 'rgba(148,163,184,0.7)')
+  label(ctx, '(or ask the assistant)', r.x + w / 2, r.y + r.h / 2 + 6, 6, 'rgba(148,163,184,0.45)')
 }
 
-function drawDimensions(ctx: Ctx, s: RenderState) {
-  const g = s.layout.ground
-  dimLine(ctx, g.x, g.x + g.w, g.y + g.h + 12, formatLen(s.design.ground.width, s.unit))
-  if (s.layout.rowWidth && !s.frameDrag) {
-    const x0 = -s.layout.rowWidth / 2
-    const tops = s.layout.appliances.filter((a) => a.placed.zone === 'top').map((a) => a.rect.y)
-    const y = Math.min(-FRAME_BODY_H - COUNTER_T, ...tops) - 10
-    // one dimension line with a tick at every frame boundary, PAX style
-    ctx.save()
-    ctx.strokeStyle = 'rgba(148,163,184,0.85)'
-    ctx.lineWidth = 0.5
-    ctx.beginPath()
-    ctx.moveTo(x0, y)
-    ctx.lineTo(x0 + s.layout.rowWidth, y)
-    let tick = x0
-    for (const fl of s.layout.frames) {
-      ctx.moveTo(tick, y - 3)
-      ctx.lineTo(tick, y + 3)
-      tick += fl.frame.width
-    }
-    ctx.moveTo(tick, y - 3)
-    ctx.lineTo(tick, y + 3)
-    ctx.stroke()
-    ctx.restore()
-    for (const fl of s.layout.frames) {
-      label(ctx, formatLenBare(fl.frame.width, s.unit), fl.body.x + fl.body.w / 2, y - 4.5, 5, 'rgba(148,163,184,0.8)')
-    }
-    if (s.layout.frames.length > 1) {
-      label(ctx, `${formatLen(s.layout.rowWidth, s.unit)} total`, 0, y - 12, 5.5, 'rgba(148,163,184,0.6)')
-    }
-    const right = Math.max(g.x + g.w, s.layout.rowWidth / 2)
-    dimLineV(ctx, -FRAME_BODY_H - COUNTER_T, 0, right + 12, formatLen(FRAME_BODY_H + COUNTER_T, s.unit))
-  }
+function drawGroundDims(ctx: Ctx, s: RenderState) {
+  const g = s.scene.ground
+  const front = project(g.x, g.z + g.d, -GROUND_T)
+  dimLine(ctx, front.x, front.x + g.w, front.y + GROUND_T + 12, formatLen(s.design.ground.width, s.unit))
+  // depth dim along the right edge (sheared)
+  const d0 = project(g.x + g.w + 14, g.z, 0)
+  const d1 = project(g.x + g.w + 14, g.z + g.d, 0)
+  ctx.save()
+  ctx.strokeStyle = 'rgba(148,163,184,0.7)'
+  ctx.lineWidth = 0.5
+  ctx.beginPath()
+  ctx.moveTo(d0.x, d0.y)
+  ctx.lineTo(d1.x, d1.y)
+  ctx.stroke()
+  label(
+    ctx,
+    formatLen(groundDepth(s.design.ground), s.unit),
+    (d0.x + d1.x) / 2 + 10,
+    (d0.y + d1.y) / 2,
+    5.5,
+    'rgba(148,163,184,0.75)',
+    'left',
+  )
+  ctx.restore()
 }
 
+// re-export for CanvasStage & thumbnails
+export { computeScene }
+export type { SceneLayout3 }

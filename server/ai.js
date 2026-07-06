@@ -194,6 +194,8 @@ const CHAT_SCHEMA = {
               'set_ground',
               'set_finish',
               'set_frame_lowered',
+              'set_layout',
+              'set_island',
               'move_frame',
               'set_name',
               'clear',
@@ -201,6 +203,9 @@ const CHAT_SCHEMA = {
           },
           width: { type: 'number', description: 'add_frame: 40|60|80|90' },
           lowered: { type: 'boolean' },
+          layout: { type: 'string', enum: ['straight', 'l-left', 'l-right', 'u'] },
+          island: { type: 'boolean' },
+          run: { type: 'string', enum: ['back', 'left', 'right', 'island'], description: 'add_frame/move_frame target run' },
           index: { type: 'number', description: 'insertion index for add_frame / target for move_frame' },
           frameIndex: { type: 'number', description: '0-based index into design.frames' },
           toIndex: { type: 'number' },
@@ -237,7 +242,11 @@ async function chat(messages, design, catalogSummary) {
   const { text } = await callGemini({
     systemInstruction:
       'You are the bbq.build design assistant. You edit an outdoor-kitchen design by emitting operations; the app applies them. ' +
-      'Frames are modules in a row (40/60/80/90 cm wide); each has a top slot (counter level) and a base slot (under counter). ' +
+      'Frames are modules (40/60/80/90 cm wide); each has a top slot (counter level) and a base slot (under counter). ' +
+      'The kitchen has a shape (design.layout): straight, l-left, l-right (an extra perpendicular wing joined by a corner), or u (two wings). ' +
+      'design.island adds a freestanding island row in front. Frames live in a run: back (default), left, right, or island (frame.run field). ' +
+      'Use set_layout {layout} / set_island {island} to change shape, and add_frame {width, run} to build wings. ' +
+      'A run only shows if the layout includes it — set the layout BEFORE adding frames to a wing. frameIndex always indexes the FLAT design.frames array. ' +
       'Kamado smokers (egg-xl, primo-xl) need a frame with lowered=true (smoker table). ' +
       'Placement rules the app enforces: appliance minFrameWidth must fit the frame; no refrigeration (fridge-60, kegerator-60, icemaker-60) ' +
       'directly under heat (grill-90, grill-80, santamaria-90, griddle-60, burner-40); no woodstore-40 under heat; sink-40 requires doors/trash base; ' +
