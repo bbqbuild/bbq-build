@@ -25,6 +25,8 @@ export interface Corner {
   style?: 'diagonal' | 'square'
   /** a counter-level oven placed on the corner (typeId of an on-counter oven) */
   top?: string
+  /** an under-counter storage unit in the corner base (typeId of a base unit) */
+  base?: string
 }
 
 export type FrameWidth = 40 | 60 | 80 | 90

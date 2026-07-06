@@ -17,7 +17,9 @@ import { Toasts } from './ui/Toasts'
 import { TopBar } from './ui/TopBar'
 import { ValidateModal } from './ui/ValidateModal'
 import { DropDecisionModal } from './ui/DropDecisionModal'
+import { NewKitchenWizard } from './ui/NewKitchenWizard'
 import { useToasts } from './ui/toast'
+import type { Design } from './types'
 import type { SavedDesign } from './types'
 
 type Modal = 'none' | 'presets' | 'spec' | 'designs' | 'validate'
@@ -32,6 +34,7 @@ export default function App() {
   const [pendingCarry, setPendingCarry] = useState(false)
   const [authReason, setAuthReason] = useState<string | undefined>(undefined)
   const [modal, setModal] = useState<Modal>('none')
+  const [wizard, setWizard] = useState(false)
   const [saving, setSaving] = useState(false)
   const viewMode = useStore((s) => s.viewMode)
   const push = useToasts((s) => s.push)
@@ -165,6 +168,13 @@ export default function App() {
   const newDesign = useCallback(() => {
     useStore.getState().setDesign(emptyDesign())
     setRoute('builder')
+    setWizard(true)
+    requestAnimationFrame(fitView)
+  }, [])
+
+  const finishWizard = useCallback((design: Design) => {
+    useStore.getState().setDesign(design)
+    setWizard(false)
     requestAnimationFrame(fitView)
   }, [])
 
@@ -179,6 +189,7 @@ export default function App() {
     setGuest(true)
     useStore.getState().setDesign(emptyDesign())
     setRoute('builder')
+    setWizard(true)
     requestAnimationFrame(fitView)
   }, [])
 
@@ -310,6 +321,7 @@ export default function App() {
       {modal === 'spec' && <SpecModal onClose={() => setModal('none')} />}
       {modal === 'designs' && <DesignsModal onClose={() => setModal('none')} />}
       {modal === 'validate' && <ValidateModal onClose={() => setModal('none')} />}
+      {wizard && <NewKitchenWizard onDone={finishWizard} onSkip={() => setWizard(false)} />}
       <DropDecisionModal />
       <Toasts />
     </div>

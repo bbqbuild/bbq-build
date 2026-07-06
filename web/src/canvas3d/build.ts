@@ -316,6 +316,39 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
       group.add(top)
       pickables.push(top)
     }
+
+    // under-counter storage in the corner base — a cabinet door on the
+    // interior-facing (45°) face of the corner unit.
+    if (corner.base) {
+      const doorW = 42
+      const doorH = bodyH - 16
+      const cy = bodyH / 2
+      // diagonal face midpoint (local) + outward normal for this side
+      const [mlx, mlz, rotY, nx, nz] =
+        side === 'left'
+          ? [(CN + RUN_DEPTH) / 2, (RUN_DEPTH + CN) / 2, Math.PI / 4, 0.707, 0.707]
+          : [(CN - RUN_DEPTH) / 2, (CN + RUN_DEPTH) / 2, -Math.PI / 4, -0.707, 0.707]
+      const doorGroup = new THREE.Group()
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(doorW, doorH, 2), finishMat(corner.finish))
+      doorGroup.add(panel)
+      const inset = new THREE.Mesh(
+        new THREE.BoxGeometry(doorW - 7, doorH - 7, 0.6),
+        new THREE.MeshStandardMaterial({ color: '#23272c', roughness: 0.6, metalness: 0.4 }),
+      )
+      inset.position.z = 1
+      doorGroup.add(inset)
+      const handle = new THREE.Mesh(
+        new THREE.BoxGeometry(doorW * 0.5, 1.8, 2),
+        new THREE.MeshStandardMaterial({ color: '#d7dce0', roughness: 0.3, metalness: 0.85 }),
+      )
+      handle.position.set(0, doorH * 0.32, 1.6)
+      doorGroup.add(handle)
+      doorGroup.position.set(x + mlx + nx * 1.5, cy, mlz + nz * 1.5)
+      doorGroup.rotation.y = rotY
+      doorGroup.traverse((o) => (o.userData = { kind: 'corner', id: side }))
+      group.add(doorGroup)
+      pickables.push(doorGroup)
+    }
   }
 
   // ---- pergola (posts + beams + slatted roof over the kitchen) ----

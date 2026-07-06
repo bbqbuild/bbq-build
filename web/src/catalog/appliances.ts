@@ -274,6 +274,9 @@ export function fitsFrame(type: ApplianceType, frameWidth: number): boolean {
 /** Counter-level ovens that can sit on a corner unit. */
 export const CORNER_OVENS = APPLIANCES.filter((a) => a.mount === 'oncounter')
 
+/** Under-counter storage that can fill a corner cabinet base. */
+export const CORNER_BASES = APPLIANCES.filter((a) => a.zone === 'base')
+
 /** Compact catalog reference for AI prompts. */
 export function catalogSummary(custom: ApplianceType[] = []): string {
   return [...APPLIANCES, ...custom]

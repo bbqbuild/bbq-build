@@ -98,6 +98,7 @@ interface BuilderState {
   setCorner: (side: CornerId, present: boolean, style?: 'diagonal' | 'square') => void
   setCornerStyle: (side: CornerId, style: 'diagonal' | 'square') => void
   setCornerAppliance: (side: CornerId, typeId: string | null) => void
+  setCornerBase: (side: CornerId, typeId: string | null) => void
   /** which run newly-added frames go into (drives shape via corners) */
   activeRun: RunId
   setActiveRun: (run: RunId) => void
@@ -320,6 +321,13 @@ export const useStore = create<BuilderState>((set, get) => {
         d.corners = d.corners ?? {}
         const cur = d.corners[side] ?? { finish: d.frames[0]?.finish ?? 'graphite' }
         d.corners[side] = { ...cur, top: typeId ?? undefined }
+      }),
+
+    setCornerBase: (side, typeId) =>
+      commit((d) => {
+        d.corners = d.corners ?? {}
+        const cur = d.corners[side] ?? { finish: d.frames[0]?.finish ?? 'graphite' }
+        d.corners[side] = { ...cur, base: typeId ?? undefined }
       }),
 
     setCounterMaterial: (id) =>
@@ -635,6 +643,7 @@ export function priceBreakdown(design: Design, unit: Unit = 'cm'): { lines: Pric
   for (const side of ['left', 'right'] as const) {
     const c = cornerFor(design, side)
     if (c?.top) applCounts.set(c.top, (applCounts.get(c.top) ?? 0) + 1)
+    if (c?.base) applCounts.set(c.base, (applCounts.get(c.base) ?? 0) + 1)
   }
   for (const [typeId, qty] of applCounts) {
     const t = getAppliance(typeId)
