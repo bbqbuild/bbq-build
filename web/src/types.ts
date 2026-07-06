@@ -119,8 +119,9 @@ export interface ApplianceType {
   brand: string
   zone: Zone
   mount: Mount
-  /** Smallest frame width (cm) this appliance fits into. */
-  minFrameWidth: FrameWidth
+  /** Smallest frame width (cm) this appliance fits into. Usually a standard
+   *  size, but AI-imported oversize units carry their own custom width. */
+  minFrameWidth: number
   price: number
   description: string
   /** Emoji used on catalog cards as a lightweight icon. */

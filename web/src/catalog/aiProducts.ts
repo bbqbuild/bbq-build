@@ -41,18 +41,26 @@ function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)
 }
 
-/** Smallest standard frame width the product fits into, or null if too wide. */
+/** Smallest standard frame width the product fits into, or null if oversize. */
 export function frameWidthFor(widthCm: number): FrameWidth | null {
   for (const w of FRAME_WIDTHS) if (widthCm <= w) return w
   return null
+}
+
+/**
+ * Frame width an appliance needs: the smallest standard size that fits, or —
+ * for oversize units (wider than 90 cm) — its own width rounded up to 5 cm,
+ * which becomes a custom frame when the item is dropped onto the canvas.
+ */
+function neededWidth(widthCm: number): number {
+  return frameWidthFor(widthCm) ?? Math.max(90, Math.ceil(widthCm / 5) * 5)
 }
 
 /** Convert an AI search result into a placeable catalog item, or an error string. */
 export function toApplianceType(p: AiProduct): ApplianceType | string {
   const spec = CATEGORY_MAP[p.category]
   if (!spec) return `Unsupported category "${p.category}"`
-  const minFrameWidth = frameWidthFor(p.width_cm)
-  if (!minFrameWidth) return `${p.brand} ${p.model} is ${Math.round(p.width_cm)} cm wide — wider than our largest 90 cm frame`
+  const minFrameWidth = neededWidth(p.width_cm)
   return {
     id: `ai-${slug(`${p.brand}-${p.model}`)}`,
     name: `${p.brand} ${p.model}`,
