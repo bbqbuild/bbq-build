@@ -44,9 +44,13 @@ interface BuilderState {
   showGrid: boolean
   unit: Unit
   chatOpen: boolean
+  viewMode: '3d' | '2d'
+  measuring: boolean
 
   select: (s: Selection) => void
   toggleChat: () => void
+  toggleView: () => void
+  toggleMeasure: () => void
   addCustomAppliance: (t: ApplianceType) => void
   setDragging: (d: DragPayload | null) => void
   setHoveredFrame: (id: string | null) => void
@@ -104,8 +108,17 @@ export const useStore = create<BuilderState>((set, get) => {
     showGrid: false,
     unit: (localStorage.getItem('bbq_unit') as Unit) || 'cm',
     chatOpen: localStorage.getItem('bbq_chat') !== 'closed',
+    viewMode: (localStorage.getItem('bbq_view') as '3d' | '2d') || '3d',
+    measuring: false,
 
     select: (selection) => set({ selection }),
+    toggleView: () =>
+      set((s) => {
+        const viewMode = s.viewMode === '3d' ? '2d' : '3d'
+        localStorage.setItem('bbq_view', viewMode)
+        return { viewMode, measuring: false }
+      }),
+    toggleMeasure: () => set((s) => ({ measuring: !s.measuring })),
     toggleChat: () =>
       set((s) => {
         localStorage.setItem('bbq_chat', s.chatOpen ? 'closed' : 'open')

@@ -328,8 +328,9 @@ export function CanvasStage() {
   )
 }
 
-/** Zoom the camera so the whole kitchen is visible. Used by the toolbar. */
+/** Zoom the camera so the whole kitchen is visible. Works for both views. */
 export function fitView() {
+  window.dispatchEvent(new CustomEvent('bbq:fit'))
   const wrap = document.querySelector('.canvas-wrap') as HTMLElement | null
   if (!wrap) return
   const scene = computeScene(useStore.getState().design)

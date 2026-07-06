@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { clearSession, createDesign, getToken, updateDesign } from './auth/api'
 import { Login } from './auth/Login'
 import { CanvasStage, fitView } from './canvas/CanvasStage'
+import { Stage3D } from './canvas3d/Stage3D'
 import { emptyDesign, useStore } from './state/store'
 import { ChatPanel } from './ui/ChatPanel'
 import { DesignsModal } from './ui/DesignsModal'
@@ -20,6 +21,7 @@ export default function App() {
   const [authed, setAuthed] = useState<boolean>(() => Boolean(getToken()))
   const [modal, setModal] = useState<Modal>('none')
   const [saving, setSaving] = useState(false)
+  const viewMode = useStore((s) => s.viewMode)
   const push = useToasts((s) => s.push)
 
   useEffect(() => {
@@ -76,6 +78,7 @@ export default function App() {
       } else if (e.key === 'Escape') {
         setModal('none')
         s.select({ kind: 'none' })
+        useStore.setState({ measuring: false })
       } else if (e.key.toLowerCase() === 'f') {
         fitView()
       } else if (e.key.toLowerCase() === 'g') {
@@ -84,6 +87,10 @@ export default function App() {
         s.toggleDims()
       } else if (e.key.toLowerCase() === 'u') {
         s.toggleUnit()
+      } else if (e.key.toLowerCase() === 'v') {
+        s.toggleView()
+      } else if (e.key.toLowerCase() === 'm') {
+        if (useStore.getState().viewMode === '3d') s.toggleMeasure()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -117,7 +124,7 @@ export default function App() {
       <div className="workspace">
         <ChatPanel />
         <Sidebar />
-        <CanvasStage />
+        {viewMode === '3d' ? <Stage3D /> : <CanvasStage />}
         <Inspector />
       </div>
       {modal === 'presets' && <PresetsModal onClose={() => setModal('none')} />}

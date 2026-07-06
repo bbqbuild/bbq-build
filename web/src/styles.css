@@ -280,6 +280,27 @@ body {
   touch-action: none;
 }
 
+.stage3d-canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.measure-hint {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 9px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  pointer-events: none;
+  z-index: 5;
+}
+
 /* ---------- sidebar ---------- */
 
 .sidebar {

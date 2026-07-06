@@ -19,6 +19,8 @@ page.on('pageerror', (e) => {
 })
 
 await page.goto(BASE)
+await page.evaluate(() => localStorage.setItem('bbq_view', '2d'))
+await page.reload()
 await page.fill('input[type=password]', 'Ember&Oak-2417')
 await page.click('button[type=submit]')
 await page.waitForSelector('.topbar')

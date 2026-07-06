@@ -31,14 +31,19 @@ export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onOpe
   const toggleUnit = useStore((s) => s.toggleUnit)
   const chatOpen = useStore((s) => s.chatOpen)
   const toggleChat = useStore((s) => s.toggleChat)
+  const viewMode = useStore((s) => s.viewMode)
+  const toggleView = useStore((s) => s.toggleView)
+  const measuring = useStore((s) => s.measuring)
+  const toggleMeasure = useStore((s) => s.toggleMeasure)
   const [menuOpen, setMenuOpen] = useState(false)
   const [nameDraft, setNameDraft] = useState<string | null>(null)
 
   const { total } = priceBreakdown(design)
 
   function zoom(f: number) {
+    window.dispatchEvent(new CustomEvent('bbq:zoom', { detail: { factor: f } }))
     const wrap = document.querySelector('.canvas-wrap') as HTMLElement | null
-    if (wrap) zoomStep(f, wrap.clientWidth, wrap.clientHeight)
+    if (wrap && viewMode === '2d') zoomStep(f, wrap.clientWidth, wrap.clientHeight)
   }
 
   return (
@@ -84,6 +89,19 @@ export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onOpe
           </button>
           <button className="btn btn-icon unit-toggle" onClick={toggleUnit} title="Switch units (U)">
             {unit === 'cm' ? 'cm' : 'ft·in'}
+          </button>
+        </div>
+        <div className="btn-group">
+          <button className="btn btn-icon" onClick={toggleView} title="Switch 3D / blueprint view (V)">
+            {viewMode === '3d' ? '3D' : '2D'}
+          </button>
+          <button
+            className={`btn btn-icon ${measuring ? 'active' : ''}`}
+            onClick={toggleMeasure}
+            disabled={viewMode !== '3d'}
+            title="Measure tool (M) — click two points"
+          >
+            📏
           </button>
         </div>
         <div className="btn-group">
