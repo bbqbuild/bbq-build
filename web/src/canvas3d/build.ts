@@ -282,6 +282,44 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
     }
   }
 
+  // ---- pergola (posts + beams + slatted roof over the kitchen) ----
+  if (design.pergola) {
+    const ex = scene2d.extents
+    const m = 40 // overhang past the kitchen
+    const x0 = ex.x0 - m
+    const x1 = ex.x1 + m
+    const z0 = ex.z0 - m
+    const z1 = ex.z1 + m
+    const H = 235
+    const wood = new THREE.MeshStandardMaterial({ color: '#6b4a2b', roughness: 0.85 })
+    const woodDark = new THREE.MeshStandardMaterial({ color: '#553a22', roughness: 0.85 })
+    const post = (px: number, pz: number) => {
+      const p = new THREE.Mesh(new THREE.BoxGeometry(10, H, 10), wood)
+      p.position.set(px, H / 2, pz)
+      p.castShadow = true
+      group.add(p)
+    }
+    post(x0, z0)
+    post(x1, z0)
+    post(x0, z1)
+    post(x1, z1)
+    // perimeter beams along x (front/back)
+    for (const pz of [z0, z1]) {
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0 + 12, 12, 8), woodDark)
+      beam.position.set((x0 + x1) / 2, H + 6, pz)
+      beam.castShadow = true
+      group.add(beam)
+    }
+    // rafters/slats spanning z, spaced along x
+    const slatGap = 26
+    for (let x = x0 + slatGap; x < x1; x += slatGap) {
+      const slat = new THREE.Mesh(new THREE.BoxGeometry(5, 8, z1 - z0 + 12), wood)
+      slat.position.set(x, H + 16, (z0 + z1) / 2)
+      slat.castShadow = true
+      group.add(slat)
+    }
+  }
+
   // ---- ground dimension lines (measures on the canvas) ----
   if (showDims) {
     const dimMat = new THREE.LineBasicMaterial({ color: 0x94a3b8, transparent: true, opacity: 0.7 })

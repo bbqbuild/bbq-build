@@ -3,7 +3,7 @@ import { APPLIANCES, fitsFrame } from '../catalog/appliances'
 import { toApplianceType, type AiProduct } from '../catalog/aiProducts'
 import { checkPlacement } from '../catalog/compat'
 import { FINISHES, FRAME_SPECS, GROUND_TYPES } from '../catalog/frames'
-import { aiSearchAppliances } from '../auth/api'
+import { aiSearchAppliances, aiScanUrl } from '../auth/api'
 import { groundDepth, runsForLayout, type RunId } from '../types'
 import { formatPrice, useStore } from '../state/store'
 import { formatLen } from '../units'
@@ -52,6 +52,8 @@ function BuildTab() {
   const ground = useStore((s) => s.design.ground)
   const frames = useStore((s) => s.design.frames)
   const island = useStore((s) => Boolean(s.design.island))
+  const pergola = useStore((s) => Boolean(s.design.pergola))
+  const setPergola = useStore((s) => s.setPergola)
   const activeRun = useStore((s) => s.activeRun)
   const layout = useStore((s) => s.design.layout ?? 'straight')
   const setGround = useStore((s) => s.setGround)
@@ -182,10 +184,14 @@ function BuildTab() {
         </section>
       )}
 
-      <CollapsibleSection title="Ground & island" storageKey="bbq_ground_open">
+      <CollapsibleSection title="Ground & extras" storageKey="bbq_ground_open">
         <label className="check-row" title="A freestanding island counter in front of the main run">
           <input type="checkbox" checked={island} onChange={(e) => setIsland(e.target.checked)} />
           <span>Island in front</span>
+        </label>
+        <label className="check-row" title="A slatted pergola over the kitchen">
+          <input type="checkbox" checked={pergola} onChange={(e) => setPergola(e.target.checked)} />
+          <span>Pergola overhead</span>
         </label>
 
         <h4 className="sub-h">Ground</h4>
@@ -363,25 +369,47 @@ function AppliancesTab() {
   )
 }
 
+const BRANDS = ['VEVOR', 'Napoleon', 'Blaze']
+
 function AiProductSearch() {
   const [query, setQuery] = useState('')
+  const [url, setUrl] = useState('')
   const [busy, setBusy] = useState(false)
   const [results, setResults] = useState<AiProduct[] | null>(null)
   const addCustomAppliance = useStore((s) => s.addCustomAppliance)
   const design = useStore((s) => s.design)
   const push = useToasts((s) => s.push)
 
-  async function search(e: React.FormEvent) {
-    e.preventDefault()
-    if (!query.trim() || busy) return
+  async function runSearch(q: string) {
+    if (!q.trim() || busy) return
     setBusy(true)
     setResults(null)
     try {
-      const { items } = await aiSearchAppliances(query.trim())
+      const { items } = await aiSearchAppliances(q.trim())
       setResults(items)
       if (!items.length) push('No products found — try a different search', 'info')
     } catch (err) {
       push(err instanceof Error ? err.message : 'Search failed', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function search(e: React.FormEvent) {
+    e.preventDefault()
+    runSearch(query)
+  }
+
+  async function scanUrl(e: React.FormEvent) {
+    e.preventDefault()
+    if (!url.trim() || busy) return
+    setBusy(true)
+    try {
+      const { item } = await aiScanUrl(url.trim())
+      add(item)
+      setUrl('')
+    } catch (err) {
+      push(err instanceof Error ? err.message : 'Could not read that URL', 'error')
     } finally {
       setBusy(false)
     }
@@ -402,15 +430,33 @@ function AiProductSearch() {
       <h3>
         ✨ Real products <span className="h-hint">powered by Gemini</span>
       </h3>
+      <div className="brand-row">
+        {BRANDS.map((b) => (
+          <button key={b} className="brand-chip" disabled={busy} onClick={() => runSearch(`${b} outdoor kitchen built-in appliances`)}>
+            {b}
+          </button>
+        ))}
+      </div>
       <form className="ai-search-row" onSubmit={search}>
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="e.g. Napoleon built-in grill"
+          placeholder="Search any brand or product…"
           disabled={busy}
         />
         <button className="btn" type="submit" disabled={busy || !query.trim()}>
           {busy ? '…' : 'Find'}
+        </button>
+      </form>
+      <form className="ai-search-row" onSubmit={scanUrl}>
+        <input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          placeholder="…or paste a product URL"
+          disabled={busy}
+        />
+        <button className="btn" type="submit" disabled={busy || !url.trim()} title="Scan a product page and add it">
+          {busy ? '…' : 'Scan'}
         </button>
       </form>
       {busy && <p className="hint">Searching the real world…</p>}

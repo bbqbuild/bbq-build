@@ -111,6 +111,10 @@ export async function aiSearchAppliances(query: string): Promise<{ items: AiProd
   return request('/api/ai/appliances', { method: 'POST', body: JSON.stringify({ query }) })
 }
 
+export async function aiScanUrl(url: string): Promise<{ item: AiProduct }> {
+  return request('/api/ai/scan-url', { method: 'POST', body: JSON.stringify({ url }) })
+}
+
 export async function aiValidate(design: Design, catalogSummary: string): Promise<ValidationReport> {
   return request('/api/ai/validate', { method: 'POST', body: JSON.stringify({ design, catalogSummary }) })
 }

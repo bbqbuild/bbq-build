@@ -161,6 +161,68 @@ async function searchAppliances(query) {
   return { items: cleaned, cached: false }
 }
 
+// ---------- scan a product URL ----------
+
+async function scanUrl(url) {
+  let html = ''
+  try {
+    const res = await fetch(url, {
+      redirect: 'follow',
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; bbq.build/1.0)' },
+      signal: AbortSignal.timeout(15000),
+    })
+    if (!res.ok) throw new Error(`fetch ${res.status}`)
+    html = await res.text()
+  } catch (e) {
+    throw Object.assign(new Error(`Couldn't open that URL (${e.message}). Paste a public product page.`), { status: 400 })
+  }
+  // crude HTML → text, keep title/meta and body text
+  const title = (html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || '').trim()
+  const text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&[a-z]+;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .slice(0, 6000)
+
+  const structured = await callGemini({
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          {
+            text:
+              `Extract the outdoor-kitchen appliance from this product page as JSON. ` +
+              `Category must be one of: ${CATEGORIES.join(', ')}. width_cm is the unit's width (cut-out width if given, else overall). ` +
+              `If it's not an outdoor kitchen appliance, set category to "" .\n\nTITLE: ${title}\nURL: ${url}\nPAGE: ${text}`,
+          },
+        ],
+      },
+    ],
+    responseSchema: {
+      type: 'object',
+      properties: {
+        brand: { type: 'string' },
+        model: { type: 'string' },
+        category: { type: 'string' },
+        width_cm: { type: 'number' },
+        price_usd: { type: 'number' },
+        blurb: { type: 'string' },
+      },
+      required: ['brand', 'model', 'category', 'width_cm', 'price_usd', 'blurb'],
+    },
+    temperature: 0.1,
+    maxOutputTokens: 1024,
+  })
+  const item = parseJson(structured.text)
+  if (!item.category || !CATEGORIES.includes(item.category)) {
+    throw Object.assign(new Error("That page doesn't look like an outdoor-kitchen appliance we can place."), { status: 422 })
+  }
+  item.url = url
+  return { item }
+}
+
 // ---------- build validation ----------
 
 async function validateBuild(design, catalogSummary) {
@@ -315,4 +377,4 @@ async function chat(messages, design, catalogSummary) {
   return result
 }
 
-module.exports = { searchAppliances, validateBuild, chat }
+module.exports = { searchAppliances, validateBuild, chat, scanUrl }

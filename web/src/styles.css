@@ -2432,3 +2432,11 @@ input[type='range'] {
   width: 22px; height: 22px; border-radius: 5px; flex-shrink: 0;
   border: 1px solid rgba(255,255,255,0.15);
 }
+
+.brand-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.brand-chip {
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px;
+  color: var(--text-dim); font-size: 12px; font-weight: 700; padding: 5px 12px; cursor: pointer;
+}
+.brand-chip:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.brand-chip:disabled { opacity: 0.5; cursor: default; }

@@ -76,6 +76,7 @@ interface BuilderState {
   setFrameHeight: (id: string, height: number) => void
   setCounterMaterial: (id: string) => void
   setAllHeights: (height: number) => void
+  setPergola: (on: boolean) => void
   setCornerFinish: (side: CornerId, finish: FrameFinish) => void
   setCornerLowered: (side: CornerId, lowered: boolean) => void
   setCorner: (side: CornerId, present: boolean, style?: 'diagonal' | 'square') => void
@@ -295,6 +296,11 @@ export const useStore = create<BuilderState>((set, get) => {
     setCounterMaterial: (id) =>
       commit((d) => {
         d.counterMaterial = id
+      }),
+
+    setPergola: (on) =>
+      commit((d) => {
+        d.pergola = on
       }),
 
     setAllHeights: (height) =>

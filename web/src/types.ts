@@ -72,6 +72,8 @@ export interface Design {
   corners?: Partial<Record<CornerId, Corner | null>>
   /** countertop material id (see COUNTER_MATERIALS). Default white quartz. */
   counterMaterial?: string
+  /** a slatted pergola over the kitchen */
+  pergola?: boolean
   /** AI-sourced real products added to this design's catalog. */
   custom?: ApplianceType[]
 }

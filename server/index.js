@@ -187,6 +187,15 @@ async function main() {
   )
 
   aiRouter.post(
+    '/scan-url',
+    aiHandler(async (req) => {
+      const { url } = req.body ?? {}
+      if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) throw Object.assign(new Error('A valid http(s) URL is required'), { status: 400 })
+      return ai.scanUrl(url.trim())
+    }),
+  )
+
+  aiRouter.post(
     '/validate',
     aiHandler(async (req) => {
       const { design, catalogSummary } = req.body ?? {}
