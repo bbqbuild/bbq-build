@@ -1,0 +1,20 @@
+import { chromium } from 'playwright'
+const browser = await chromium.launch()
+const page = await browser.newPage({ viewport: { width: 1600, height: 950 } })
+await page.goto('http://127.0.0.1:3000')
+await page.fill('input[type=password]', 'Ember&Oak-2417')
+await page.click('button[type=submit]')
+await page.waitForSelector('.topbar')
+await page.click('text=✨ Presets')
+await page.waitForTimeout(400)
+await page.click("text=Chef's Island")
+await page.waitForTimeout(600)
+// zoom in for detail
+for (let i = 0; i < 4; i++) { await page.keyboard.press('+') }
+await page.click('.canvas-wrap canvas', { position: { x: 800, y: 500 }, force: true })
+await page.keyboard.press('Escape')
+await page.keyboard.press('f')
+await page.waitForTimeout(500)
+await page.screenshot({ path: 'screenshots/detail-full.png', clip: { x: 280, y: 54, width: 1030, height: 700 } })
+await browser.close()
+console.log('ok')

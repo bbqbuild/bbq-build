@@ -1,0 +1,24 @@
+{
+  "name": "bbq-build",
+  "version": "1.0.0",
+  "private": true,
+  "description": "bbq.build — design your outdoor kitchen",
+  "scripts": {
+    "dev": "npm run dev --prefix web",
+    "build": "npm run build --prefix web",
+    "start": "node server/index.js",
+    "postinstall": "npm install --prefix web"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "compression": "^1.7.5",
+    "express": "^4.21.2",
+    "pg": "^8.13.1"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "playwright": "^1.61.1"
+  }
+}

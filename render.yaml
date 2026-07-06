@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: bbq-build
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: '22'
+      - key: BBQ_SECRET
+        generateValue: true
+      - key: BBQ_USER_EMAIL
+        value: sagirodin@gmail.com
+      - key: BBQ_USER_PASSWORD
+        value: Ember&Oak-2417
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bbq-build-db
+          property: connectionString
+
+databases:
+  - name: bbq-build-db
+    plan: free
+    databaseName: bbqbuild
+    user: bbqbuild
