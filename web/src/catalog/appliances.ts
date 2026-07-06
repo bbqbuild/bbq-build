@@ -32,6 +32,18 @@ export const APPLIANCES: ApplianceType[] = [
     icon: '🔥',
   },
   {
+    id: 'santamaria-90',
+    name: 'Santa Maria Grill 90',
+    shortName: 'Santa Maria 90',
+    brand: 'AsadoWorks',
+    zone: 'top',
+    mount: 'dropin',
+    minFrameWidth: 90,
+    price: 3480,
+    description: 'Open Argentine-style grill — crank wheel raises the grate over live oak coals.',
+    icon: '🥩',
+  },
+  {
     id: 'griddle-60',
     name: 'Teppanyaki Griddle 60',
     shortName: 'Griddle 60',
@@ -78,6 +90,31 @@ export const APPLIANCES: ApplianceType[] = [
     price: 430,
     description: 'Insulated ice well with bottle rail and drain. Keeps drinks cold for 12 hours.',
     icon: '🧊',
+  },
+  // ---- Top zone: kamado smokers (need a lowered smoker table) ----
+  {
+    id: 'egg-xl',
+    name: 'Big Green Egg XL',
+    shortName: 'Green Egg XL',
+    brand: 'Big Green Egg',
+    zone: 'top',
+    mount: 'kamado',
+    minFrameWidth: 80,
+    price: 1899,
+    description: 'XL ceramic kamado — low-and-slow smoker, pizza oven and grill in one. Needs a lowered table.',
+    icon: '🥚',
+  },
+  {
+    id: 'primo-xl',
+    name: 'Primo Oval XL 400',
+    shortName: 'Primo XL',
+    brand: 'Primo',
+    zone: 'top',
+    mount: 'kamado',
+    minFrameWidth: 80,
+    price: 1749,
+    description: 'Oval ceramic kamado with split-zone firebox. Needs a lowered table.',
+    icon: '🪨',
   },
   // ---- Top zone: on-counter ----
   {
@@ -193,12 +230,26 @@ export const APPLIANCES: ApplianceType[] = [
 
 export const applianceById = new Map(APPLIANCES.map((a) => [a.id, a]))
 
+/** AI-sourced real products, registered per loaded design. */
+const customById = new Map<string, ApplianceType>()
+
+export function registerCustomAppliances(list: ApplianceType[] | undefined) {
+  for (const t of list ?? []) customById.set(t.id, t)
+}
+
 export function getAppliance(typeId: string): ApplianceType {
-  const t = applianceById.get(typeId)
+  const t = applianceById.get(typeId) ?? customById.get(typeId)
   if (!t) throw new Error(`Unknown appliance type: ${typeId}`)
   return t
 }
 
 export function fitsFrame(type: ApplianceType, frameWidth: number): boolean {
   return frameWidth >= type.minFrameWidth
+}
+
+/** Compact catalog reference for AI prompts. */
+export function catalogSummary(custom: ApplianceType[] = []): string {
+  return [...APPLIANCES, ...custom]
+    .map((a) => `${a.id} | ${a.name} | zone:${a.zone} mount:${a.mount} | min ${a.minFrameWidth}cm | $${a.price}`)
+    .join('\n')
 }

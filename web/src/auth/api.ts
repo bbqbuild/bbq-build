@@ -65,3 +65,41 @@ export async function updateDesign(id: number, design: Design): Promise<SavedDes
 export async function deleteDesign(id: number): Promise<void> {
   await request<{ ok: true }>(`/api/designs/${id}`, { method: 'DELETE' })
 }
+
+// ---- AI ----
+
+import type { AiProduct } from '../catalog/aiProducts'
+
+export interface ChatOperation {
+  op: string
+  [key: string]: unknown
+}
+
+export interface ChatResponse {
+  reply: string
+  operations: ChatOperation[]
+}
+
+export interface ValidationReport {
+  feasible: boolean
+  score: number
+  summary: string
+  issues: { severity: 'error' | 'warning' | 'info'; message: string }[]
+  suggestions: string[]
+}
+
+export async function aiSearchAppliances(query: string): Promise<{ items: AiProduct[]; cached: boolean }> {
+  return request('/api/ai/appliances', { method: 'POST', body: JSON.stringify({ query }) })
+}
+
+export async function aiValidate(design: Design, catalogSummary: string): Promise<ValidationReport> {
+  return request('/api/ai/validate', { method: 'POST', body: JSON.stringify({ design, catalogSummary }) })
+}
+
+export async function aiChat(
+  messages: { role: 'user' | 'assistant'; content: string }[],
+  design: Design,
+  catalogSummary: string,
+): Promise<ChatResponse> {
+  return request('/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages, design, catalogSummary }) })
+}

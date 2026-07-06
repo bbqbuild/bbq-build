@@ -1,8 +1,20 @@
 const crypto = require('crypto')
+const fs = require('fs')
 const path = require('path')
+
+// minimal .env loader (no dependency): KEY=VALUE lines, # comments
+try {
+  const envFile = fs.readFileSync(path.join(__dirname, '..', '.env'), 'utf8')
+  for (const line of envFile.split('\n')) {
+    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/)
+    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2]
+  }
+} catch {}
+
 const express = require('express')
 const compression = require('compression')
 const { createStorage } = require('./storage')
+const ai = require('./ai')
 
 const PORT = process.env.PORT || 8000
 // Render needs 0.0.0.0; locally we stay on loopback (ports are tunnelled).
@@ -112,7 +124,54 @@ async function main() {
 
   app.use('/api/designs', designRouter)
 
-  app.get('/api/health', (_req, res) => res.json({ ok: true, storage: storage.kind }))
+  // ---- AI (Gemini) ----
+  const aiRouter = express.Router()
+  aiRouter.use(requireAuth)
+
+  const aiHandler = (fn) => async (req, res) => {
+    try {
+      res.json(await fn(req))
+    } catch (err) {
+      console.error('AI error:', err.message)
+      res.status(err.status || 502).json({ error: err.message })
+    }
+  }
+
+  aiRouter.post(
+    '/appliances',
+    aiHandler(async (req) => {
+      const { query } = req.body ?? {}
+      if (typeof query !== 'string' || query.trim().length < 2) {
+        throw Object.assign(new Error('query is required'), { status: 400 })
+      }
+      return ai.searchAppliances(query.trim().slice(0, 200))
+    }),
+  )
+
+  aiRouter.post(
+    '/validate',
+    aiHandler(async (req) => {
+      const { design, catalogSummary } = req.body ?? {}
+      if (!design || typeof design !== 'object') throw Object.assign(new Error('design is required'), { status: 400 })
+      return ai.validateBuild(design, String(catalogSummary ?? '').slice(0, 8000))
+    }),
+  )
+
+  aiRouter.post(
+    '/chat',
+    aiHandler(async (req) => {
+      const { messages, design, catalogSummary } = req.body ?? {}
+      if (!Array.isArray(messages) || !messages.length) throw Object.assign(new Error('messages required'), { status: 400 })
+      if (!design || typeof design !== 'object') throw Object.assign(new Error('design is required'), { status: 400 })
+      return ai.chat(messages, design, String(catalogSummary ?? '').slice(0, 8000))
+    }),
+  )
+
+  app.use('/api/ai', aiRouter)
+
+  app.get('/api/health', (_req, res) =>
+    res.json({ ok: true, storage: storage.kind, ai: Boolean(process.env.GEMINI_API_KEY) }),
+  )
 
   // ---- static frontend ----
   const dist = path.join(__dirname, '..', 'web', 'dist')

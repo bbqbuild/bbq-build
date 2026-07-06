@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useStore } from '../state/store'
-import { fitsFrame, getAppliance } from '../catalog/appliances'
+import { getAppliance } from '../catalog/appliances'
+import { checkPlacement } from '../catalog/compat'
 import { COUNTER_T, FRAME_BODY_H } from '../types'
 import { camera, fitTo, screenToWorld, zoomAt } from './camera'
 import { computeLayout, insertionIndex, rectContains, type SceneLayout } from './layout'
@@ -79,7 +80,9 @@ export function CanvasStage() {
       let dropTargets: Set<string> | null = null
       if (dragging?.kind === 'appliance') {
         const type = getAppliance(dragging.typeId)
-        dropTargets = new Set(s.design.frames.filter((f) => fitsFrame(type, f.width)).map((f) => f.id))
+        dropTargets = new Set(
+          s.design.frames.filter((f) => checkPlacement(s.design, f, type).ok).map((f) => f.id),
+        )
       }
 
       const rs: RenderState = {
@@ -96,6 +99,7 @@ export function CanvasStage() {
             : null,
         showDims: s.showDims,
         showGrid: s.showGrid,
+        unit: s.unit,
         time: (now - start) / 1000,
         camera,
         width: wrap.clientWidth,
@@ -225,7 +229,7 @@ export function CanvasStage() {
         frameId = al?.frame.frame.id ?? null
       }
       const frame = s.design.frames.find((f) => f.id === frameId)
-      dropTarget.current = frame && fitsFrame(type, frame.width) ? frame.id : null
+      dropTarget.current = frame && checkPlacement(s.design, frame, type).ok ? frame.id : null
     }
   }
 
@@ -239,7 +243,7 @@ export function CanvasStage() {
       s.placeAppliance(dropTarget.current, s.dragging.typeId)
     } else if (s.dragging?.kind === 'frame') {
       const layout = computeLayout(s.design)
-      s.addFrame(s.dragging.width, insertionIndex(layout, w.x))
+      s.addFrame(s.dragging.width, insertionIndex(layout, w.x), s.dragging.lowered)
     }
     dropTarget.current = null
     s.setDragging(null)

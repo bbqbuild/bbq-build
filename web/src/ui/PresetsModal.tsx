@@ -33,6 +33,7 @@ function PresetThumb({ design }: { design: Design }) {
       frameDrag: null,
       showDims: false,
       showGrid: false,
+      unit: 'cm',
       time: 0.4,
       camera: { x: layout.bounds.x + layout.bounds.w / 2, y: layout.bounds.y + layout.bounds.h / 2, zoom },
       width: W,

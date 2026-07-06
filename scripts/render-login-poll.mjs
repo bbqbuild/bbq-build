@@ -12,7 +12,7 @@ function loggedInUrl(u) {
 
 while (Date.now() < DEADLINE) {
   try {
-    const browser = await chromium.connectOverCDP('http://127.0.0.1:9222')
+    const browser = await chromium.connectOverCDP('http://localhost:9222')
     const ctx = browser.contexts()[0]
     if (ctx) {
       const urls = ctx.pages().map((p) => p.url())

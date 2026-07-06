@@ -5,6 +5,7 @@ import {
   brushLines,
   fillRoundRect,
   gauge,
+  graphite,
   knob,
   roundRectPath,
   steel,
@@ -63,6 +64,84 @@ const grill: Painter = (ctx, r, o) => {
   fillRoundRect(ctx, r.x + 1, bandY, r.w - 2, r.h - hoodH, 0.5, steel(ctx, bandY, r.y + r.h, 0.82))
   fascia(ctx, r, o, r.w >= 85 ? 4 : 3)
   strokeRoundRect(ctx, r.x, r.y, r.w, hoodH, [6, 6, 1.5, 1.5], 'rgba(0,0,0,0.3)', 0.5)
+}
+
+const santamaria: Painter = (ctx, r, o) => {
+  const boxH = r.h * 0.26 // open firebox above the counter
+  const boxY = r.y + r.h - boxH
+  const inset = 4
+
+  // side posts
+  const postG = graphite(ctx, r.y, r.y + r.h)
+  fillRoundRect(ctx, r.x + inset, r.y + 2, 2.6, r.h - 2, 0.8, postG)
+  fillRoundRect(ctx, r.x + r.w - inset - 2.6, r.y + 2, 2.6, r.h - 2, 0.8, postG)
+  // crossbar
+  fillRoundRect(ctx, r.x + inset - 1, r.y + 2, r.w - inset * 2 + 2, 2.4, 1, postG)
+
+  // crank wheel on the right post
+  const wx = r.x + r.w - inset - 1.3
+  const wy = r.y + r.h * 0.32
+  ctx.strokeStyle = '#8d949b'
+  ctx.lineWidth = 1.1
+  ctx.beginPath()
+  ctx.arc(wx, wy, 4.4, 0, Math.PI * 2)
+  ctx.stroke()
+  for (let i = 0; i < 3; i++) {
+    const a = (i * Math.PI * 2) / 3 + 0.5
+    ctx.beginPath()
+    ctx.moveTo(wx, wy)
+    ctx.lineTo(wx + Math.cos(a) * 4.4, wy + Math.sin(a) * 4.4)
+    ctx.stroke()
+  }
+  ctx.beginPath()
+  ctx.arc(wx, wy, 1.2, 0, Math.PI * 2)
+  ctx.fillStyle = '#c8cdd2'
+  ctx.fill()
+
+  // grate suspended on chains
+  const grateY = r.y + r.h * 0.52
+  ctx.strokeStyle = 'rgba(160,166,172,0.9)'
+  ctx.lineWidth = 0.6
+  for (const fx of [0.22, 0.5, 0.78]) {
+    const cx = r.x + r.w * fx
+    ctx.setLineDash([1.1, 1])
+    ctx.beginPath()
+    ctx.moveTo(cx, r.y + 4.4)
+    ctx.lineTo(cx, grateY)
+    ctx.stroke()
+    ctx.setLineDash([])
+  }
+  const grate = ctx.createLinearGradient(0, grateY, 0, grateY + 2.6)
+  grate.addColorStop(0, '#5a6067')
+  grate.addColorStop(1, '#33383d')
+  fillRoundRect(ctx, r.x + inset + 4, grateY, r.w - inset * 2 - 8, 2.6, 0.8, grate)
+  ctx.strokeStyle = '#22262a'
+  ctx.lineWidth = 0.4
+  for (let x = r.x + inset + 6; x < r.x + r.w - inset - 6; x += 3.2) {
+    ctx.beginPath()
+    ctx.moveTo(x, grateY + 0.4)
+    ctx.lineTo(x, grateY + 2.2)
+    ctx.stroke()
+  }
+
+  // firebox with live coals
+  fillRoundRect(ctx, r.x + 1.5, boxY, r.w - 3, boxH, [1.5, 1.5, 0.5, 0.5], steel(ctx, boxY, boxY + boxH, 0.8))
+  brushLines(ctx, r.x + 1.5, boxY, r.w - 3, boxH)
+  const coalY = boxY + boxH * 0.45
+  const flicker = 0.8 + 0.2 * Math.sin(o.time * 5.1) * Math.sin(o.time * 1.7)
+  const coals = ctx.createLinearGradient(0, coalY, 0, boxY + boxH - 1.5)
+  coals.addColorStop(0, `rgba(255,170,60,${0.95 * flicker})`)
+  coals.addColorStop(1, `rgba(180,40,10,${0.85 * flicker})`)
+  fillRoundRect(ctx, r.x + 5, coalY, r.w - 10, boxH - (coalY - boxY) - 1.5, 1, coals)
+  ctx.fillStyle = `rgba(30,12,6,0.55)`
+  for (let i = 0; i < Math.floor(r.w / 9); i++) {
+    const cx = r.x + 7 + i * 9 + ((i * 5) % 4)
+    ctx.beginPath()
+    ctx.arc(cx, coalY + 1.6 + ((i * 3) % 2), 1.5, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  fascia(ctx, r, o, 0)
 }
 
 const griddle: Painter = (ctx, r, o) => {
@@ -197,6 +276,65 @@ const pizza: Painter = (ctx, r, o) => {
   ctx.fillRect(r.x + 3, bodyY + bodyH, 2.5, o.counterY - (bodyY + bodyH) < 0 ? 0 : 0)
 }
 
+const kamado = (style: 'egg' | 'primo'): Painter => (ctx, r, o) => {
+  const cx = r.x + r.w / 2
+  const sink = 5 // nested into the table cutout
+  const bottom = o.counterY + sink
+  const rx = Math.min(r.w * 0.36, style === 'egg' ? 26 : 30) * (style === 'primo' ? 1.15 : 1)
+  const ry = (bottom - r.y) / 2
+  const cy = r.y + ry
+
+  // ceramic body
+  const grad = ctx.createRadialGradient(cx - rx * 0.35, cy - ry * 0.4, rx * 0.2, cx, cy, Math.max(rx, ry) * 1.15)
+  if (style === 'egg') {
+    grad.addColorStop(0, '#5d9a67')
+    grad.addColorStop(0.55, '#2f6a3c')
+    grad.addColorStop(1, '#173a20')
+  } else {
+    grad.addColorStop(0, '#5b5f66')
+    grad.addColorStop(0.55, '#2e3237')
+    grad.addColorStop(1, '#101315')
+  }
+  ctx.beginPath()
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
+  ctx.fillStyle = grad
+  ctx.fill()
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)'
+  ctx.lineWidth = 0.6
+  ctx.stroke()
+
+  // lid seam with hinge
+  const seamY = cy - ry * 0.12
+  const seamHalf = rx * Math.sqrt(1 - ((seamY - cy) / ry) ** 2)
+  ctx.strokeStyle = 'rgba(0,0,0,0.5)'
+  ctx.lineWidth = 0.8
+  ctx.beginPath()
+  ctx.moveTo(cx - seamHalf, seamY)
+  ctx.lineTo(cx + seamHalf, seamY)
+  ctx.stroke()
+  // metal band + hinge block
+  ctx.strokeStyle = '#9aa1a8'
+  ctx.lineWidth = 1.4
+  ctx.beginPath()
+  ctx.moveTo(cx - seamHalf - 1, seamY - 1.2)
+  ctx.lineTo(cx + seamHalf + 1, seamY - 1.2)
+  ctx.stroke()
+  fillRoundRect(ctx, cx + seamHalf - 1.5, seamY - 4, 4, 7, 1, '#7c838a')
+
+  // chimney cap
+  fillRoundRect(ctx, cx - 3, r.y - 1.5, 6, 4, 1.2, '#8d949b')
+  fillRoundRect(ctx, cx - 1.8, r.y + 2.5, 3.6, 2, 0.6, '#5b6167')
+
+  // thermometer + handle
+  gauge(ctx, cx, seamY - ry * 0.4, 2.4)
+  barHandle(ctx, cx - rx * 0.35, seamY - 3.6, rx * 0.7, 1.8)
+
+  // bottom vent door
+  fillRoundRect(ctx, cx - 4, bottom - 7, 8, 3.4, 0.8, 'rgba(0,0,0,0.45)')
+  ctx.strokeStyle = 'rgba(180,186,192,0.5)'
+  strokeRoundRect(ctx, cx - 4, bottom - 7, 8, 3.4, 0.8, 'rgba(180,186,192,0.5)', 0.5)
+}
+
 const fridgeish = (badge: 'fridge' | 'keg' | 'ice'): Painter => (ctx, r, o) => {
   // stainless door with inset panel
   fillRoundRect(ctx, r.x, r.y, r.w, r.h, 1.5, steel(ctx, r.y, r.y + r.h, 0.95))
@@ -315,6 +453,9 @@ const woodstore: Painter = (ctx, r) => {
 export const PAINTERS: Record<string, Painter> = {
   'grill-90': grill,
   'grill-80': grill,
+  'santamaria-90': santamaria,
+  'egg-xl': kamado('egg'),
+  'primo-xl': kamado('primo'),
   'griddle-60': griddle,
   'burner-40': burner,
   'sink-40': sink,

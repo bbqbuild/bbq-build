@@ -1,8 +1,10 @@
 import { formatPrice, priceBreakdown, useStore } from '../state/store'
+import { formatLen } from '../units'
 
 export function SpecModal({ onClose }: { onClose: () => void }) {
   const design = useStore((s) => s.design)
-  const { lines, total } = priceBreakdown(design)
+  const unit = useStore((s) => s.unit)
+  const { lines, total } = priceBreakdown(design, unit)
 
   function exportJson() {
     const spec = {
@@ -32,7 +34,7 @@ export function SpecModal({ onClose }: { onClose: () => void }) {
         </header>
         <p className="hint">
           {design.name} · {design.frames.length} frames ·{' '}
-          {design.frames.reduce((s, f) => s + f.width, 0)} cm run
+          {formatLen(design.frames.reduce((s, f) => s + f.width, 0), unit)} run
         </p>
         <table className="spec-table">
           <thead>

@@ -9,12 +9,13 @@ interface Props {
   onOpenPresets: () => void
   onOpenSpec: () => void
   onOpenDesigns: () => void
+  onOpenValidate: () => void
   onNew: () => void
   onLogout: () => void
   saving: boolean
 }
 
-export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onNew, onLogout, saving }: Props) {
+export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onOpenValidate, onNew, onLogout, saving }: Props) {
   const design = useStore((s) => s.design)
   const dirty = useStore((s) => s.dirty)
   const setName = useStore((s) => s.setName)
@@ -26,6 +27,10 @@ export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onNew
   const showGrid = useStore((s) => s.showGrid)
   const toggleDims = useStore((s) => s.toggleDims)
   const toggleGrid = useStore((s) => s.toggleGrid)
+  const unit = useStore((s) => s.unit)
+  const toggleUnit = useStore((s) => s.toggleUnit)
+  const chatOpen = useStore((s) => s.chatOpen)
+  const toggleChat = useStore((s) => s.toggleChat)
   const [menuOpen, setMenuOpen] = useState(false)
   const [nameDraft, setNameDraft] = useState<string | null>(null)
 
@@ -77,6 +82,9 @@ export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onNew
           <button className={`btn btn-icon ${showDims ? 'active' : ''}`} onClick={toggleDims} title="Toggle dimensions (D)">
             ⟷
           </button>
+          <button className="btn btn-icon unit-toggle" onClick={toggleUnit} title="Switch units (U)">
+            {unit === 'cm' ? 'cm' : 'ft·in'}
+          </button>
         </div>
         <div className="btn-group">
           <button className="btn btn-icon" onClick={() => zoom(1.25)} title="Zoom in (+)">
@@ -92,8 +100,18 @@ export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onNew
       </div>
 
       <div className="topbar-right">
+        <button
+          className={`btn btn-ghost ${chatOpen ? 'active-ghost' : ''}`}
+          onClick={toggleChat}
+          title="AI assistant chat"
+        >
+          ✨ Assistant
+        </button>
+        <button className="btn btn-ghost" onClick={onOpenValidate} title="AI feasibility review of your build">
+          🛡 AI Check
+        </button>
         <button className="btn btn-ghost" onClick={onOpenPresets}>
-          ✨ Presets
+          Presets
         </button>
         <button className="btn btn-ghost" onClick={onOpenSpec} title="Bill of materials">
           Spec · <strong>{formatPrice(total)}</strong>

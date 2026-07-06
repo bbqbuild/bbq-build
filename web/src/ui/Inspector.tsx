@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { APPLIANCES, fitsFrame, getAppliance } from '../catalog/appliances'
+import { checkPlacement } from '../catalog/compat'
 import { FINISHES, frameSpecByWidth, GROUND_TYPES } from '../catalog/frames'
 import { applianceForZone, formatPrice, priceBreakdown, useStore } from '../state/store'
+import { formatLen } from '../units'
+import { useToasts } from './toast'
 import type { ApplianceType, Frame, Zone } from '../types'
 
 export function Inspector() {
@@ -26,6 +29,7 @@ export function Inspector() {
 
 function SummaryPanel() {
   const design = useStore((s) => s.design)
+  const unit = useStore((s) => s.unit)
   const { total } = priceBreakdown(design)
   const clearAll = useStore((s) => s.clearAll)
   return (
@@ -42,7 +46,7 @@ function SummaryPanel() {
         </div>
         <div>
           <dt>Run length</dt>
-          <dd>{design.frames.reduce((s, f) => s + f.width, 0)} cm</dd>
+          <dd>{formatLen(design.frames.reduce((s, f) => s + f.width, 0), unit)}</dd>
         </div>
         <div>
           <dt>Estimate</dt>
@@ -65,6 +69,7 @@ function SummaryPanel() {
 function GroundPanel() {
   const ground = useStore((s) => s.design.ground)
   const setGround = useStore((s) => s.setGround)
+  const unit = useStore((s) => s.unit)
   const spec = GROUND_TYPES.find((g) => g.id === ground.type)!
   return (
     <div className="panel">
@@ -83,7 +88,7 @@ function GroundPanel() {
       </div>
       <label className="slider-row">
         <span>
-          Width <strong>{ground.width} cm</strong>
+          Width <strong>{formatLen(ground.width, unit)}</strong>
         </span>
         <input
           type="range"
@@ -112,13 +117,19 @@ function FramePanel({ frame }: { frame: Frame }) {
   const design = useStore((s) => s.design)
   const removeFrame = useStore((s) => s.removeFrame)
   const setFrameFinish = useStore((s) => s.setFrameFinish)
+  const setFrameLowered = useStore((s) => s.setFrameLowered)
+  const unit = useStore((s) => s.unit)
+  const push = useToasts((s) => s.push)
   const spec = frameSpecByWidth.get(frame.width)
   const index = design.frames.findIndex((f) => f.id === frame.id)
 
   return (
     <div className="panel">
       <h2>
-        Frame {index + 1} <span className="h-hint">{frame.width} cm module</span>
+        Frame {index + 1}{' '}
+        <span className="h-hint">
+          {formatLen(frame.width, unit)} {frame.lowered ? 'smoker table' : 'module'}
+        </span>
       </h2>
       <div className="finish-row">
         {FINISHES.map((f) => (
@@ -131,6 +142,18 @@ function FramePanel({ frame }: { frame: Frame }) {
           />
         ))}
       </div>
+      <label className="check-row" title="Drops the counter so kamado smokers sit at working height">
+        <input
+          type="checkbox"
+          checked={Boolean(frame.lowered)}
+          onChange={(e) => {
+            if (!setFrameLowered(frame.id, e.target.checked)) {
+              push('Remove the appliances in this frame first — they don’t fit the other height', 'error')
+            }
+          }}
+        />
+        <span>Lowered counter (smoker table)</span>
+      </label>
       <SlotEditor frame={frame} zone="top" title="Counter level" />
       <SlotEditor frame={frame} zone="base" title="Under counter" />
       <dl className="facts">
@@ -150,6 +173,7 @@ function SlotEditor({ frame, zone, title }: { frame: Frame; zone: Zone; title: s
   const design = useStore((s) => s.design)
   const placeAppliance = useStore((s) => s.placeAppliance)
   const removeAppliance = useStore((s) => s.removeAppliance)
+  const unit = useStore((s) => s.unit)
   const [picking, setPicking] = useState(false)
 
   const placed = applianceForZone(design, frame.id, zone)
@@ -176,21 +200,30 @@ function SlotEditor({ frame, zone, title }: { frame: Frame; zone: Zone; title: s
       {picking ? (
         <div className="slot-options">
           {options.map((t) => {
-            const fits = fitsFrame(t, frame.width)
+            const check = checkPlacement(design, frame, t)
+            const widthIssue = !fitsFrame(t, frame.width)
             return (
               <button
                 key={t.id}
                 className="slot-option"
-                disabled={!fits}
+                disabled={!check.ok}
                 onClick={() => {
                   placeAppliance(frame.id, t.id)
                   setPicking(false)
                 }}
-                title={fits ? t.description : `Needs a ${t.minFrameWidth} cm frame`}
+                title={
+                  check.ok
+                    ? t.description
+                    : widthIssue
+                      ? `Needs a ${formatLen(t.minFrameWidth, unit)} frame`
+                      : check.reason
+                }
               >
                 <span className="appliance-icon">{t.icon}</span>
                 <span className="slot-option-name">{t.shortName}</span>
-                <span className="slot-option-price">{fits ? formatPrice(t.price) : `≥${t.minFrameWidth} cm`}</span>
+                <span className="slot-option-price">
+                  {check.ok ? formatPrice(t.price) : widthIssue ? `≥${formatLen(t.minFrameWidth, unit)}` : '⚠ conflict'}
+                </span>
               </button>
             )
           })}

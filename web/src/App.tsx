@@ -3,6 +3,7 @@ import { clearSession, createDesign, getToken, updateDesign } from './auth/api'
 import { Login } from './auth/Login'
 import { CanvasStage, fitView } from './canvas/CanvasStage'
 import { emptyDesign, useStore } from './state/store'
+import { ChatPanel } from './ui/ChatPanel'
 import { DesignsModal } from './ui/DesignsModal'
 import { Inspector } from './ui/Inspector'
 import { PresetsModal } from './ui/PresetsModal'
@@ -10,9 +11,10 @@ import { Sidebar } from './ui/Sidebar'
 import { SpecModal } from './ui/SpecModal'
 import { Toasts } from './ui/Toasts'
 import { TopBar } from './ui/TopBar'
+import { ValidateModal } from './ui/ValidateModal'
 import { useToasts } from './ui/toast'
 
-type Modal = 'none' | 'presets' | 'spec' | 'designs'
+type Modal = 'none' | 'presets' | 'spec' | 'designs' | 'validate'
 
 export default function App() {
   const [authed, setAuthed] = useState<boolean>(() => Boolean(getToken()))
@@ -80,6 +82,8 @@ export default function App() {
         s.toggleGrid()
       } else if (e.key.toLowerCase() === 'd') {
         s.toggleDims()
+      } else if (e.key.toLowerCase() === 'u') {
+        s.toggleUnit()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -103,6 +107,7 @@ export default function App() {
         onOpenPresets={() => setModal('presets')}
         onOpenSpec={() => setModal('spec')}
         onOpenDesigns={() => setModal('designs')}
+        onOpenValidate={() => setModal('validate')}
         onNew={newDesign}
         onLogout={() => {
           clearSession()
@@ -110,6 +115,7 @@ export default function App() {
         }}
       />
       <div className="workspace">
+        <ChatPanel />
         <Sidebar />
         <CanvasStage />
         <Inspector />
@@ -117,6 +123,7 @@ export default function App() {
       {modal === 'presets' && <PresetsModal onClose={() => setModal('none')} />}
       {modal === 'spec' && <SpecModal onClose={() => setModal('none')} />}
       {modal === 'designs' && <DesignsModal onClose={() => setModal('none')} />}
+      {modal === 'validate' && <ValidateModal onClose={() => setModal('none')} />}
       <Toasts />
     </div>
   )

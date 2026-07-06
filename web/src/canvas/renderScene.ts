@@ -1,5 +1,6 @@
 import type { Design, FrameFinish, Selection } from '../types'
 import { COUNTER_T, FRAME_BODY_H } from '../types'
+import { formatLen, formatLenBare, type Unit } from '../units'
 import { getAppliance } from '../catalog/appliances'
 import { PAINTERS } from './applianceArt'
 import { Ctx, brushLines, dimLine, dimLineV, fillRoundRect, graphite, label, roundRectPath, steel, strokeRoundRect } from './draw'
@@ -26,6 +27,7 @@ export interface RenderState {
   frameDrag: { frameId: string; worldX: number } | null
   showDims: boolean
   showGrid: boolean
+  unit: Unit
   time: number
   camera: Camera
   width: number
@@ -60,7 +62,7 @@ export function renderScene(ctx: Ctx, s: RenderState) {
     drawFrame(ctx, s, fl, 0)
   }
 
-  if (s.layout.counter) drawCounter(ctx, s.layout.counter)
+  for (const c of s.layout.counters) drawCounter(ctx, c)
 
   for (const al of s.layout.appliances) {
     if (al.frame.frame.id === draggedId) continue
@@ -76,7 +78,7 @@ export function renderScene(ctx: Ctx, s: RenderState) {
       ctx.globalAlpha = 0.88
       drawFrame(ctx, s, fl, dx)
       // its own counter chunk
-      const c: Rect = { x: fl.body.x + dx - 1.5, y: -FRAME_BODY_H - COUNTER_T, w: fl.body.w + 3, h: COUNTER_T }
+      const c: Rect = { x: fl.body.x + dx - 1.5, y: fl.counterTopY, w: fl.body.w + 3, h: COUNTER_T }
       drawCounter(ctx, c)
       for (const al of s.layout.appliances.filter((a) => a.frame.frame.id === draggedId)) {
         drawAppliance(ctx, s, al, dx)
@@ -358,17 +360,27 @@ function drawCounter(ctx: Ctx, c: Rect) {
 // ---------- appliances ----------
 
 function drawAppliance(ctx: Ctx, s: RenderState, al: ApplianceLayout, dx: number) {
-  const painter = PAINTERS[al.placed.typeId]
+  let painter = PAINTERS[al.placed.typeId]
+  if (!painter) {
+    // AI-sourced products borrow a built-in painter
+    try {
+      const paintAs = getAppliance(al.placed.typeId).paintAs
+      if (paintAs) painter = PAINTERS[paintAs]
+    } catch {
+      return
+    }
+  }
   if (!painter) return
   const r = { ...al.rect, x: al.rect.x + dx }
-  const counterY = -FRAME_BODY_H - COUNTER_T
-  painter(ctx, r, { counterY, counterH: COUNTER_T, time: s.time })
+  painter(ctx, r, { counterY: al.frame.counterTopY, counterH: COUNTER_T, time: s.time })
 }
 
 // ---------- smoke ----------
 
+const SMOKY_TYPES = /^(grill-|santamaria-|egg-|primo-)/
+
 function drawSmoke(ctx: Ctx, s: RenderState) {
-  const grills = s.layout.appliances.filter((a) => a.placed.typeId.startsWith('grill-'))
+  const grills = s.layout.appliances.filter((a) => SMOKY_TYPES.test(a.placed.typeId))
   for (const g of grills) {
     if (s.frameDrag && g.frame.frame.id === s.frameDrag.frameId) continue
     const originX = g.rect.x + g.rect.w * 0.72
@@ -390,7 +402,7 @@ function drawSmoke(ctx: Ctx, s: RenderState) {
 // ---------- overlays ----------
 
 function frameFullRect(fl: FrameLayout): Rect {
-  return { x: fl.body.x - 1, y: fl.body.y - COUNTER_T - 1, w: fl.body.w + 2, h: fl.body.h + COUNTER_T + 2 }
+  return { x: fl.body.x - 1, y: fl.counterTopY - 1, w: fl.body.w + 2, h: fl.body.h + COUNTER_T + 2 }
 }
 
 function drawOverlays(ctx: Ctx, s: RenderState) {
@@ -496,10 +508,11 @@ function drawEmptyHint(ctx: Ctx, s: RenderState) {
 
 function drawDimensions(ctx: Ctx, s: RenderState) {
   const g = s.layout.ground
-  dimLine(ctx, g.x, g.x + g.w, g.y + g.h + 12, `${s.design.ground.width} cm`)
+  dimLine(ctx, g.x, g.x + g.w, g.y + g.h + 12, formatLen(s.design.ground.width, s.unit))
   if (s.layout.rowWidth && !s.frameDrag) {
     const x0 = -s.layout.rowWidth / 2
-    const y = -FRAME_BODY_H - COUNTER_T - 10 - topClearance(s)
+    const tops = s.layout.appliances.filter((a) => a.placed.zone === 'top').map((a) => a.rect.y)
+    const y = Math.min(-FRAME_BODY_H - COUNTER_T, ...tops) - 10
     // one dimension line with a tick at every frame boundary, PAX style
     ctx.save()
     ctx.strokeStyle = 'rgba(148,163,184,0.85)'
@@ -518,17 +531,13 @@ function drawDimensions(ctx: Ctx, s: RenderState) {
     ctx.stroke()
     ctx.restore()
     for (const fl of s.layout.frames) {
-      label(ctx, `${fl.frame.width}`, fl.body.x + fl.body.w / 2, y - 4.5, 5, 'rgba(148,163,184,0.8)')
+      label(ctx, formatLenBare(fl.frame.width, s.unit), fl.body.x + fl.body.w / 2, y - 4.5, 5, 'rgba(148,163,184,0.8)')
     }
     if (s.layout.frames.length > 1) {
-      label(ctx, `${s.layout.rowWidth} cm total`, 0, y - 12, 5.5, 'rgba(148,163,184,0.6)')
+      label(ctx, `${formatLen(s.layout.rowWidth, s.unit)} total`, 0, y - 12, 5.5, 'rgba(148,163,184,0.6)')
     }
     const right = Math.max(g.x + g.w, s.layout.rowWidth / 2)
-    dimLineV(ctx, -FRAME_BODY_H - COUNTER_T, 0, right + 12, `${FRAME_BODY_H + COUNTER_T} cm`)
+    dimLineV(ctx, -FRAME_BODY_H - COUNTER_T, 0, right + 12, formatLen(FRAME_BODY_H + COUNTER_T, s.unit))
   }
 }
 
-function topClearance(s: RenderState): number {
-  const tops = s.layout.appliances.filter((a) => a.placed.zone === 'top')
-  return tops.length ? Math.max(...tops.map((a) => a.rect.h)) : 0
-}

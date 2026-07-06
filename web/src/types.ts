@@ -15,13 +15,15 @@ export interface Frame {
   id: string
   width: FrameWidth
   finish: FrameFinish
+  /** Lowered smoker table — counter drops so kamado rims land at working height. */
+  lowered?: boolean
 }
 
 /** Which vertical zone of a frame an appliance occupies. */
 export type Zone = 'top' | 'base'
 
-/** How a top-zone appliance meets the counter. */
-export type Mount = 'dropin' | 'oncounter' | 'undercounter'
+/** How a top-zone appliance meets the counter. 'kamado' = nested in a lowered table. */
+export type Mount = 'dropin' | 'oncounter' | 'undercounter' | 'kamado'
 
 export interface PlacedAppliance {
   id: string
@@ -35,6 +37,8 @@ export interface Design {
   ground: Ground
   frames: Frame[]
   appliances: PlacedAppliance[]
+  /** AI-sourced real products added to this design's catalog. */
+  custom?: ApplianceType[]
 }
 
 export interface ApplianceType {
@@ -50,6 +54,12 @@ export interface ApplianceType {
   description: string
   /** Emoji used on catalog cards as a lightweight icon. */
   icon: string
+  /** AI-sourced real product (not part of the built-in catalog). */
+  custom?: boolean
+  /** Built-in typeId whose canvas painter this custom item borrows. */
+  paintAs?: string
+  /** Product page for custom items. */
+  url?: string
 }
 
 export interface Preset {
@@ -76,7 +86,12 @@ export const FRAME_WIDTHS: FrameWidth[] = [40, 60, 80, 90]
 
 // Shared elevation geometry (cm)
 export const FRAME_BODY_H = 82
+export const LOWERED_BODY_H = 58
 export const COUNTER_T = 6
+
+export function frameBodyH(f: Pick<Frame, 'lowered'>): number {
+  return f.lowered ? LOWERED_BODY_H : FRAME_BODY_H
+}
 export const COUNTER_OVERHANG = 3
 export const GROUND_T = 14
 export const FRAME_LEG_H = 8
