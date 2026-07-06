@@ -211,6 +211,11 @@ export const useStore = create<BuilderState>((set, get) => {
   }
 })
 
+// Exposed for the QA harness (scripts/qa.mjs)
+if (typeof window !== 'undefined') {
+  ;(window as unknown as { __bbq: typeof useStore.getState }).__bbq = useStore.getState
+}
+
 // ---- Derived helpers ----
 
 export function applianceForZone(design: Design, frameId: string, zone: Zone): PlacedAppliance | undefined {

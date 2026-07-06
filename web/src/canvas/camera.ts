@@ -7,6 +7,11 @@ import type { Camera } from './renderScene'
  */
 export const camera: Camera = { x: 0, y: -55, zoom: 3.2 }
 
+// Exposed for the QA harness (scripts/qa.mjs)
+if (typeof window !== 'undefined') {
+  ;(window as unknown as { __bbqCam: Camera }).__bbqCam = camera
+}
+
 export const MIN_ZOOM = 0.8
 export const MAX_ZOOM = 14
 
