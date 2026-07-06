@@ -60,6 +60,15 @@ export async function signup(email: string, password: string): Promise<AuthResul
   return { needsConfirmation: !data.session }
 }
 
+/** Start an OAuth sign-in (redirects away, returns to the app on success). */
+export async function oauth(provider: 'google' | 'apple'): Promise<void> {
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: { redirectTo: window.location.origin },
+  })
+  if (error) throw new ApiError(400, error.message)
+}
+
 export async function listDesigns(): Promise<SavedDesign[]> {
   return request<SavedDesign[]>('/api/designs')
 }

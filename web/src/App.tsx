@@ -8,6 +8,7 @@ import { emptyDesign, useStore } from './state/store'
 import { ChatPanel } from './ui/ChatPanel'
 import { DesignsModal } from './ui/DesignsModal'
 import { HomeScreen } from './ui/HomeScreen'
+import { Landing } from './ui/Landing'
 import { Inspector } from './ui/Inspector'
 import { PresetsModal } from './ui/PresetsModal'
 import { Sidebar } from './ui/Sidebar'
@@ -19,11 +20,16 @@ import { useToasts } from './ui/toast'
 import type { SavedDesign } from './types'
 
 type Modal = 'none' | 'presets' | 'spec' | 'designs' | 'validate'
+// landing → public cover; auth → login/signup; home → dashboard; builder → editor
+type Route = 'landing' | 'auth' | 'home' | 'builder'
 
 export default function App() {
   const [authed, setAuthed] = useState<boolean>(false)
   const [ready, setReady] = useState(false)
-  const [route, setRoute] = useState<'home' | 'builder'>('home')
+  const [route, setRoute] = useState<Route>('landing')
+  const [guest, setGuest] = useState(false)
+  const [pendingCarry, setPendingCarry] = useState(false)
+  const [authReason, setAuthReason] = useState<string | undefined>(undefined)
   const [modal, setModal] = useState<Modal>('none')
   const [saving, setSaving] = useState(false)
   const viewMode = useStore((s) => s.viewMode)
@@ -34,14 +40,29 @@ export default function App() {
     supabase.auth.getSession().then(({ data }) => {
       setCachedEmail(data.session?.user?.email ?? null)
       setAuthed(Boolean(data.session))
+      setRoute(data.session ? 'home' : 'landing')
       setReady(true)
     })
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
       setCachedEmail(session?.user?.email ?? null)
-      setAuthed(Boolean(session))
-      if (!session) setRoute('home')
+      const isAuthed = Boolean(session)
+      setAuthed(isAuthed)
+      if (isAuthed) {
+        setGuest(false)
+        // if a guest built something, keep it and save it into the new account
+        const st = useStore.getState()
+        if (st.design.frames.length > 0 && st.savedId === null) {
+          setRoute('builder')
+          setPendingCarry(true) // save the guest's design into the new account
+        } else {
+          setRoute('home')
+        }
+      } else if (!guest) {
+        setRoute('landing')
+      }
     })
     return () => sub.subscription.unsubscribe()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -71,6 +92,15 @@ export default function App() {
     },
     [push],
   )
+
+  // save a guest design into the account right after signup/login
+  useEffect(() => {
+    if (authed && pendingCarry) {
+      setPendingCarry(false)
+      save({ silent: true }).then(() => push('Saved to your account', 'success'))
+      requestAnimationFrame(fitView)
+    }
+  }, [authed, pendingCarry, save, push])
 
   // auto-save: debounce every design change (no manual save needed)
   useEffect(() => {
@@ -103,14 +133,28 @@ export default function App() {
     requestAnimationFrame(fitView)
   }, [])
 
+  // PLG: try the builder as a guest (no account) with one local design
+  const tryAsGuest = useCallback(() => {
+    setGuest(true)
+    useStore.getState().setDesign(emptyDesign())
+    setRoute('builder')
+    requestAnimationFrame(fitView)
+  }, [])
+
+  const promptSignup = useCallback((reason?: string) => {
+    setAuthReason(reason)
+    setRoute('auth')
+  }, [])
+
   const goHome = useCallback(() => {
     setModal('none')
-    setRoute('home')
-  }, [])
+    if (authed) setRoute('home')
+    else promptSignup('Create a free account to save this design and start more.')
+  }, [authed, promptSignup])
 
   // global keyboard shortcuts
   useEffect(() => {
-    if (!authed) return
+    if (route !== 'builder') return
     function onKey(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement).tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return
@@ -147,28 +191,42 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [authed, save])
+  }, [route, save])
 
   const logout = () => {
     clearSession()
     setAuthed(false)
-    setRoute('home')
+    setGuest(false)
+    setRoute('landing')
   }
 
   if (!ready) {
     return <div className="app-boot" />
   }
 
-  if (!authed) {
+  if (route === 'landing' && !authed) {
     return (
       <>
-        <Login onLogin={() => { setAuthed(true); setRoute('home') }} />
+        <Landing onTry={tryAsGuest} onSignIn={() => promptSignup(undefined)} />
         <Toasts />
       </>
     )
   }
 
-  if (route === 'home') {
+  if (route === 'auth' && !authed) {
+    return (
+      <>
+        <Login
+          onLogin={() => setRoute('home')}
+          onBack={() => setRoute(guest ? 'builder' : 'landing')}
+          reason={authReason}
+        />
+        <Toasts />
+      </>
+    )
+  }
+
+  if (route === 'home' && authed) {
     return (
       <>
         <HomeScreen onOpen={openDesign} onNew={newDesign} onLogout={logout} />
@@ -177,11 +235,22 @@ export default function App() {
     )
   }
 
+  const isGuest = guest && !authed
+
   return (
     <div className="app">
+      {isGuest && (
+        <div className="guest-banner">
+          <span>You're exploring as a guest — your design lives only in this browser.</span>
+          <button className="btn btn-primary" onClick={() => promptSignup('Create a free account to save this design.')}>
+            Sign up to save
+          </button>
+        </div>
+      )}
       <TopBar
-        onSave={() => save()}
+        onSave={() => (isGuest ? promptSignup('Create a free account to save this design.') : save())}
         saving={saving}
+        guest={isGuest}
         onOpenPresets={() => setModal('presets')}
         onOpenSpec={() => setModal('spec')}
         onOpenDesigns={() => setModal('designs')}

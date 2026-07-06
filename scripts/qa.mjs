@@ -19,12 +19,11 @@ page.on('pageerror', (e) => {
 })
 
 await page.goto(BASE)
-await page.evaluate(() => localStorage.setItem('bbq_view', '2d'))
+await page.evaluate(() => { localStorage.clear(); localStorage.setItem('bbq_view', '2d') })
 await page.reload()
-await page.fill('input[type=password]', 'Ember&Oak-2417')
-await page.click('button[type=submit]')
-await page.waitForSelector('.topbar')
-await page.click('text=✨ Assistant').catch(() => {})
+// landing → try as guest → builder (no auth needed for interaction QA)
+await page.waitForSelector('.landing, .topbar', { timeout: 15000 })
+if (await page.$('.landing')) { await page.click('.landing-cta'); await page.waitForSelector('.topbar') }
 
 const getState = () =>
   page.evaluate(() => {
@@ -92,6 +91,8 @@ check('drag reorder moved frame', st.frames[st.frames.length - 1] === 'back:90')
 
 // switch to L-right layout and drag a frame into the right wing
 await page.click('text=Structure')
+const coll = await page.$('.collapsible-head')
+if (coll) { await coll.click(); await page.waitForTimeout(200) }
 await page.click('.layout-chip:has-text("L right")')
 st = await getState()
 check('layout is l-right', st.layout === 'l-right')
@@ -138,19 +139,6 @@ const gp = await page.evaluate(() => window.__bbqGroundScreen())
 await canvas.click({ position: gp })
 st = await getState()
 check('ground selected', st.selection.kind === 'ground')
-
-// save + designs list
-await page.fill('.design-name', 'QA Kitchen v2')
-await page.keyboard.press('Enter')
-await page.click('.topbar >> text=Save')
-await page.waitForSelector('text=Design saved', { timeout: 8000 }).catch(() => {})
-st = await getState()
-check('saved (not dirty)', st.dirty === false)
-
-await page.click('.avatar')
-await page.click('text=My designs…')
-const row = await page.waitForSelector('.design-load:has-text("QA Kitchen v2")', { timeout: 5000 }).catch(() => null)
-check('saved design listed', Boolean(row))
 
 console.log(failures ? `\n${failures} FAILURES` : '\nALL PASS')
 await browser.close()

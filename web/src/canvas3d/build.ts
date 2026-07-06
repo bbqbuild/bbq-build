@@ -27,6 +27,8 @@ export interface Kitchen3D {
   scene2d: SceneLayout3
   /** animatable appliance parts (doors, drawers, hoods, lids) */
   anim: AnimPart[]
+  /** all island-run objects, for transient drag-translation */
+  islandGroup: THREE.Group
   /** center + radius for camera fitting */
   center: THREE.Vector3
   radius: number
@@ -48,6 +50,8 @@ function finishMat(finish: keyof typeof FINISH_COLORS): THREE.MeshStandardMateri
 export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kitchen3D {
   const scene2d = computeScene(design)
   const group = new THREE.Group()
+  const islandGroup = new THREE.Group()
+  group.add(islandGroup)
   const pickables: THREE.Object3D[] = []
   const bases = new Map<RunId, RunBasis>()
   const anim: AnimPart[] = []
@@ -96,20 +100,22 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
       }
     } else if (run.id === 'left') {
       const cx = run.plan.x + RUN_DEPTH / 2
+      const z0 = run.plan.z
       basis = {
         id: 'left',
         rotY: Math.PI / 2,
-        pos: (u, y) => new THREE.Vector3(cx, y, RUN_DEPTH + u),
-        uOf: (p) => p.z - RUN_DEPTH,
+        pos: (u, y) => new THREE.Vector3(cx, y, z0 + u),
+        uOf: (p) => p.z - z0,
         len: run.elev.len,
       }
     } else {
       const cx = run.plan.x + RUN_DEPTH / 2
+      const z0 = run.plan.z
       basis = {
         id: 'right',
         rotY: -Math.PI / 2,
-        pos: (u, y) => new THREE.Vector3(cx, y, RUN_DEPTH + u),
-        uOf: (p) => p.z - RUN_DEPTH,
+        pos: (u, y) => new THREE.Vector3(cx, y, z0 + u),
+        uOf: (p) => p.z - z0,
         len: run.elev.len,
       }
     }
@@ -124,7 +130,7 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
       const fgroup = new THREE.Group()
       fgroup.position.copy(basis.pos(centerU, 0))
       fgroup.rotation.y = basis.rotY
-      group.add(fgroup)
+      ;(run.id === 'island' ? islandGroup : group).add(fgroup)
       pickables.push(fgroup)
 
       // body with a dark cavity front (base appliance is real 3D geometry)
@@ -188,7 +194,7 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
       cbox.castShadow = true
       cbox.receiveShadow = true
       cbox.userData = { kind: 'counter', run: run.id }
-      group.add(cbox)
+      ;(run.id === 'island' ? islandGroup : group).add(cbox)
       pickables.push(cbox)
     }
 
@@ -196,39 +202,60 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
     if (showDims && run.elev.frames.length) {
       const tops = run.elev.appliances.filter((a) => a.placed.zone === 'top').map((a) => -a.rect.y)
       const topY = Math.max(96, ...tops) + 14
+      const dimTarget = run.id === 'island' ? islandGroup : group
       for (const fl of run.elev.frames) {
         const sp = labelSprite(formatLenBare(fl.frame.width, unit), 0.8)
         sp.position.copy(basis.pos(fl.body.x + fl.body.w / 2, topY))
-        group.add(sp)
+        dimTarget.add(sp)
       }
       if (run.elev.frames.length > 1) {
         const total = labelSprite(`${formatLenBare(run.elev.len, unit)}${unit === 'cm' ? ' cm' : ''} total`, 0.9)
         total.position.copy(basis.pos(run.elev.len / 2, topY + 16))
-        group.add(total)
+        dimTarget.add(total)
       }
     }
   }
 
-  // ---- corner units ----
+  // ---- diagonal corner units (pentagon 90×90 with a 45° front) ----
   const back = scene2d.runs.find((r) => r.id === 'back')
   for (const side of ['left', 'right'] as const) {
     const corner = cornerFor(design, side)
     if (!corner || !back) continue
     const bodyH = corner.lowered ? 58 : 82
-    const x = side === 'left' ? back.plan.x - 60 : back.plan.x + back.plan.w
-    const cbody = new THREE.Mesh(new THREE.BoxGeometry(60, bodyH, RUN_DEPTH - 2), finishMat(corner.finish))
-    cbody.position.set(x + 30, bodyH / 2, RUN_DEPTH / 2)
-    cbody.castShadow = true
-    cbody.receiveShadow = true
-    cbody.userData = { kind: 'corner', id: side }
-    group.add(cbody)
-    pickables.push(cbody)
-    const ctop = new THREE.Mesh(new THREE.BoxGeometry(60 + COUNTER_OVERHANG, COUNTER_T, RUN_DEPTH + COUNTER_OVERHANG * 2), counterMat.clone())
-    ctop.position.set(x + 30, bodyH + COUNTER_T / 2, RUN_DEPTH / 2)
-    ctop.castShadow = true
-    ctop.userData = { kind: 'corner', id: side }
-    group.add(ctop)
-    pickables.push(ctop)
+    const CN = 90
+    const x = side === 'left' ? back.plan.x - CN : back.plan.x + back.plan.w
+    // pentagon in plan (local dx, dz), diagonal facing the interior
+    const pts =
+      side === 'left'
+        ? [ [0, 0], [CN, 0], [CN, RUN_DEPTH], [RUN_DEPTH, CN], [0, CN] ]
+        : [ [0, 0], [CN, 0], [CN, CN], [CN - RUN_DEPTH, CN], [0, RUN_DEPTH] ]
+    const mkPent = (h: number, yBase: number, mat: THREE.Material, grow = 0) => {
+      const shape = new THREE.Shape()
+      pts.forEach(([dx, dz], i) => {
+        const px = dx + (dx > CN / 2 ? grow : -grow)
+        const pz = dz + (dz > CN / 2 ? grow : -grow)
+        i === 0 ? shape.moveTo(px, pz) : shape.lineTo(px, pz)
+      })
+      shape.closePath()
+      const geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false })
+      ;(mat as THREE.MeshStandardMaterial).side = THREE.DoubleSide
+      const mesh = new THREE.Mesh(geo, mat)
+      // shape plane is (x, z); extrusion along +z of shape → rotate so it extrudes up
+      mesh.rotation.x = Math.PI / 2
+      mesh.position.set(x, yBase + h, 0)
+      mesh.scale.z = 1
+      mesh.castShadow = true
+      mesh.receiveShadow = true
+      return mesh
+    }
+    const body = mkPent(bodyH, 0, finishMat(corner.finish))
+    body.userData = { kind: 'corner', id: side }
+    group.add(body)
+    pickables.push(body)
+    const top = mkPent(COUNTER_T, bodyH, counterMat.clone(), COUNTER_OVERHANG)
+    top.userData = { kind: 'corner', id: side }
+    group.add(top)
+    pickables.push(top)
   }
 
   // ---- ground dimension lines (measures on the canvas) ----
@@ -268,5 +295,5 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
   const center = bbox.getCenter(new THREE.Vector3())
   const radius = Math.max(120, bbox.getSize(new THREE.Vector3()).length() / 2)
 
-  return { group, pickables, bases, scene2d, anim, center, radius }
+  return { group, pickables, bases, scene2d, anim, islandGroup, center, radius }
 }

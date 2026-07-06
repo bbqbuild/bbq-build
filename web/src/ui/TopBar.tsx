@@ -14,9 +14,10 @@ interface Props {
   onHome: () => void
   onLogout: () => void
   saving: boolean
+  guest?: boolean
 }
 
-export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onOpenValidate, onNew, onHome, onLogout, saving }: Props) {
+export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onOpenValidate, onNew, onHome, onLogout, saving, guest }: Props) {
   const design = useStore((s) => s.design)
   const dirty = useStore((s) => s.dirty)
   const setName = useStore((s) => s.setName)
@@ -145,23 +146,31 @@ export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onOpe
         <button className="btn btn-ghost" onClick={onOpenSpec} title="Bill of materials">
           Spec · <strong>{formatPrice(total)}</strong>
         </button>
-        <span className="save-status" title="Your work saves automatically">
-          {saving ? 'Saving…' : dirty ? 'Editing…' : 'Saved ✓'}
-        </span>
-        <div className="user-menu">
-          <button className="btn btn-icon avatar" onClick={() => setMenuOpen((o) => !o)} title={getEmail() ?? ''}>
-            {(getEmail() ?? 'S')[0].toUpperCase()}
+        {guest ? (
+          <button className="btn btn-primary" onClick={onSave}>
+            Sign up to save
           </button>
-          {menuOpen && (
-            <div className="menu" onMouseLeave={() => setMenuOpen(false)}>
-              <div className="menu-email">{getEmail()}</div>
-              <button onClick={() => { setMenuOpen(false); onNew() }}>New design</button>
-              <button onClick={() => { setMenuOpen(false); onOpenDesigns() }}>My designs…</button>
-              <hr />
-              <button onClick={onLogout}>Sign out</button>
+        ) : (
+          <>
+            <span className="save-status" title="Your work saves automatically">
+              {saving ? 'Saving…' : dirty ? 'Editing…' : 'Saved ✓'}
+            </span>
+            <div className="user-menu">
+              <button className="btn btn-icon avatar" onClick={() => setMenuOpen((o) => !o)} title={getEmail() ?? ''}>
+                {(getEmail() ?? 'S')[0].toUpperCase()}
+              </button>
+              {menuOpen && (
+                <div className="menu" onMouseLeave={() => setMenuOpen(false)}>
+                  <div className="menu-email">{getEmail()}</div>
+                  <button onClick={() => { setMenuOpen(false); onNew() }}>New design</button>
+                  <button onClick={() => { setMenuOpen(false); onOpenDesigns() }}>My designs…</button>
+                  <hr />
+                  <button onClick={onLogout}>Sign out</button>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
     </header>
   )

@@ -294,6 +294,11 @@ export function CanvasStage() {
     const scene = computeScene(s.design)
     if (s.dragging?.kind === 'appliance' && dropTarget.current) {
       s.placeAppliance(dropTarget.current, s.dragging.typeId)
+    } else if (s.dragging?.kind === 'appliance') {
+      // blank space → auto-create a compatible frame at the drop point
+      const target = runUnderPointer(scene, w.x, w.y)
+      if (target) s.addFrameForAppliance(s.dragging.typeId, target.run.id, insertionIndexInRun(target.run, target.u))
+      else s.addFrameForAppliance(s.dragging.typeId, 'back')
     } else if (s.dragging?.kind === 'frame') {
       const target = runUnderPointer(scene, w.x, w.y)
       if (target) {

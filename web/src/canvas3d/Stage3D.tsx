@@ -5,6 +5,7 @@ import { getAppliance } from '../catalog/appliances'
 import { checkPlacement } from '../catalog/compat'
 import { useStore } from '../state/store'
 import type { RunId } from '../types'
+import { RUN_DEPTH } from '../types'
 import { formatLen } from '../units'
 import { buildKitchen, type Kitchen3D } from './build'
 import { labelSprite } from './textures'
@@ -98,6 +99,7 @@ export function Stage3D() {
     let measurePts: THREE.Vector3[] = []
 
     let drag: DragState | null = null
+    let islandDrag: { plane: THREE.Plane; start: THREE.Vector3; orig: { x: number; z: number } } | null = null
     let downPos: { x: number; y: number } | null = null
     let downHit: THREE.Object3D | null = null
     let openT = 0
@@ -199,13 +201,34 @@ export function Stage3D() {
         return
       }
 
-      if (hit && hit.object.userData.kind === 'frame') {
-        // possible drag — decided on move
+      if (hit && hit.object.userData.kind === 'counter' && hit.object.userData.run === 'island' && kitchen) {
+        const island = kitchen.scene2d.runs.find((r) => r.id === 'island')
+        if (island) {
+          islandDrag = {
+            plane: new THREE.Plane(new THREE.Vector3(0, 1, 0), -hit.point.y),
+            start: hit.point.clone(),
+            orig: { x: island.plan.x + island.plan.w / 2, z: island.plan.z },
+          }
+          controls.enabled = false
+          renderer.domElement.style.cursor = 'grabbing'
+        }
       }
     }
 
     function onPointerMove(e: PointerEvent) {
       const s = useStore.getState()
+      if (islandDrag && kitchen) {
+        const r = renderer.domElement.getBoundingClientRect()
+        pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1)
+        raycaster.setFromCamera(pointer, camera)
+        const pt = new THREE.Vector3()
+        if (raycaster.ray.intersectPlane(islandDrag.plane, pt)) {
+          const dx = Math.round((pt.x - islandDrag.start.x) / 5) * 5
+          const dz = Math.round((pt.z - islandDrag.start.z) / 5) * 5
+          kitchen.islandGroup.position.set(dx, 0, dz)
+        }
+        return
+      }
       if (downPos && downHit && downHit.userData.kind === 'frame' && !drag) {
         if (Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y) > 6) {
           drag = { frameId: downHit.userData.id, runId: downHit.userData.run, u: 0 }
@@ -254,6 +277,22 @@ export function Stage3D() {
 
     function onPointerUp(e: PointerEvent) {
       const s = useStore.getState()
+      if (islandDrag && kitchen) {
+        const off = kitchen.islandGroup.position
+        if (Math.abs(off.x) > 0.1 || Math.abs(off.z) > 0.1) {
+          const g = kitchen.scene2d.ground
+          const island = kitchen.scene2d.runs.find((r) => r.id === 'island')
+          const halfW = (island?.plan.w ?? 60) / 2
+          const nx = Math.min(g.x + g.w - halfW, Math.max(g.x + halfW, islandDrag.orig.x + off.x))
+          const nz = Math.min(g.z + g.d - 70, Math.max(RUN_DEPTH + 10, islandDrag.orig.z + off.z))
+          s.setIslandPos(nx, nz)
+        }
+        islandDrag = null
+        controls.enabled = true
+        renderer.domElement.style.cursor = 'default'
+        downPos = null
+        return
+      }
       if (drag && kitchen) {
         const runScene = kitchen.scene2d.runs.find((r) => r.id === drag!.runId)
         if (runScene) {
@@ -372,6 +411,30 @@ export function Stage3D() {
       const s = useStore.getState()
       if (s.dragging?.kind === 'appliance' && dropBox.visible && dropBox.userData.frameId) {
         s.placeAppliance(dropBox.userData.frameId, s.dragging.typeId)
+      } else if (s.dragging?.kind === 'appliance' && kitchen) {
+        // dropped on blank space → auto-create a compatible frame there
+        const hit = pick(e.clientX, e.clientY)
+        let run: RunId = 'back'
+        let idx: number | undefined
+        if (hit) {
+          let best: { run: RunId; u: number; d: number } | null = null
+          for (const [id, basis] of kitchen.bases) {
+            const u = Math.max(0, Math.min(basis.len, basis.uOf(hit.point)))
+            const d = basis.pos(u, 50).distanceTo(hit.point)
+            if (!best || d < best.d) best = { run: id, u, d }
+          }
+          if (best && best.d < 260) {
+            run = best.run
+            const runScene = kitchen.scene2d.runs.find((r) => r.id === best.run)
+            if (runScene) {
+              idx = 0
+              for (const fl of runScene.elev.frames) {
+                if (best.u > fl.body.x + fl.body.w / 2) idx = fl.index + 1
+              }
+            }
+          }
+        }
+        s.addFrameForAppliance(s.dragging.typeId, run, idx)
       } else if (s.dragging?.kind === 'frame' && marker.visible && kitchen) {
         const { run, u } = marker.userData as { run: RunId; u: number }
         const runScene = kitchen.scene2d.runs.find((r) => r.id === run)!

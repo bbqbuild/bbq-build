@@ -1,0 +1,16 @@
+import { chromium } from 'playwright'
+const b = await chromium.launch()
+const p = await b.newPage({ viewport: { width: 1600, height: 950 } })
+p.setDefaultTimeout(30000); p.on('pageerror', e=>console.log('PAGE ERROR:', e.message))
+await p.goto('https://bbq-build.onrender.com')
+await p.waitForSelector('.login-card')
+await p.click('.auth-tabs button:has-text("Create account")')
+const email = `produi.${Date.now()}@gmail.com`
+await p.fill('input[type=email]', email)
+await p.fill('input[type=password]', 'Test123456!')
+await p.click('button[type=submit]:has-text("Create account")')
+const home = await p.waitForSelector('.home', { timeout: 20000 }).catch(()=>null)
+console.log('prod signup -> home dashboard:', Boolean(home))
+console.log('email shown:', await p.$eval('.home-email', e=>e.textContent).catch(()=>null))
+await p.screenshot({ path: '/home/sagi/workspace/SagiWorkspace/bbqBuild/screenshots/prod-home.png' })
+await b.close()

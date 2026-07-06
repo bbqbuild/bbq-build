@@ -62,6 +62,8 @@ export interface Design {
   layout?: LayoutShape
   /** freestanding island row in front of the main counter */
   island?: boolean
+  /** island placement on the plan: center-x and back-edge z. Absent → auto. */
+  islandPos?: { x: number; z: number }
   frames: Frame[]
   appliances: PlacedAppliance[]
   /** Corner units per side. Missing key → default corner for active wings; explicit null → removed. */
@@ -163,7 +165,8 @@ export const FRAME_WALL = 3
 
 // Plan geometry (cm)
 export const RUN_DEPTH = 60
-export const CORNER = 60
+/** Diagonal corner unit: 90×90 plan with a 45° front between the runs. */
+export const CORNER = 90
 export const ISLAND_AISLE = 110
 export const DEFAULT_GROUND_DEPTH = 300
 

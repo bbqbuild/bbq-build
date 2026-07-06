@@ -202,28 +202,34 @@ export function computeScene(design: Design): SceneLayout3 {
   const rightCorner = cornerFor(design, 'right')
   if (hasL && leftCorner) {
     cornerCount++
-    counterTops.push({ runId: 'back', x: x0, z: 0, w: CORNER, d: RUN_DEPTH + COUNTER_OVERHANG, y: leftCorner.lowered ? 64 : 88, mirror: true })
+    const y = leftCorner.lowered ? 64 : 88
+    counterTops.push({ runId: 'back', x: x0, z: 0, w: CORNER, d: RUN_DEPTH + COUNTER_OVERHANG, y, mirror: true })
+    counterTops.push({ runId: 'back', x: x0, z: RUN_DEPTH, w: RUN_DEPTH, d: CORNER - RUN_DEPTH, y, mirror: true })
   }
   if (hasR && rightCorner) {
     cornerCount++
-    counterTops.push({ runId: 'back', x: x1 - CORNER, z: 0, w: CORNER, d: RUN_DEPTH + COUNTER_OVERHANG, y: rightCorner.lowered ? 64 : 88 })
+    const y = rightCorner.lowered ? 64 : 88
+    counterTops.push({ runId: 'back', x: x1 - CORNER, z: 0, w: CORNER, d: RUN_DEPTH + COUNTER_OVERHANG, y })
+    counterTops.push({ runId: 'back', x: x1 - RUN_DEPTH, z: RUN_DEPTH, w: RUN_DEPTH, d: CORNER - RUN_DEPTH, y })
   }
 
+  const leftZ0 = hasL && leftCorner ? CORNER : RUN_DEPTH
+  const rightZ0 = hasR && rightCorner ? CORNER : RUN_DEPTH
   if (hasL) {
     const elev = computeRunElevation(leftFrames, design.appliances)
     runs.push({
       id: 'left',
       frames: leftFrames,
       elev,
-      face: { origin: { x: x0 + RUN_DEPTH, z: RUN_DEPTH }, dir: { x: 0, z: 1 }, len: Math.max(elev.len, 1), top: ELEV_TOP },
-      plan: { x: x0, z: RUN_DEPTH, w: RUN_DEPTH, d: Math.max(elev.len, 1) },
-      depth: RUN_DEPTH + Math.max(elev.len, 1),
+      face: { origin: { x: x0 + RUN_DEPTH, z: leftZ0 }, dir: { x: 0, z: 1 }, len: Math.max(elev.len, 1), top: ELEV_TOP },
+      plan: { x: x0, z: leftZ0, w: RUN_DEPTH, d: Math.max(elev.len, 1) },
+      depth: leftZ0 + Math.max(elev.len, 1),
       mirror: true,
       endCap:
         elev.frames.length > 0
           ? {
               face: {
-                origin: { x: x0, z: RUN_DEPTH + elev.len },
+                origin: { x: x0, z: leftZ0 + elev.len },
                 dir: { x: 1, z: 0 },
                 len: RUN_DEPTH,
                 top: ELEV_TOP,
@@ -234,7 +240,7 @@ export function computeScene(design: Design): SceneLayout3 {
     })
     pushTops('left', elev, (u0, u1) => ({
       x: x0,
-      z: RUN_DEPTH + u0,
+      z: leftZ0 + u0,
       w: RUN_DEPTH + COUNTER_OVERHANG,
       d: u1 - u0,
     }))
@@ -247,15 +253,15 @@ export function computeScene(design: Design): SceneLayout3 {
       id: 'right',
       frames: rightFrames,
       elev,
-      face: { origin: { x: x1 - RUN_DEPTH, z: RUN_DEPTH }, dir: { x: 0, z: 1 }, len: Math.max(elev.len, 1), top: ELEV_TOP },
-      plan: { x: x1 - RUN_DEPTH, z: RUN_DEPTH, w: RUN_DEPTH, d: Math.max(elev.len, 1) },
-      depth: RUN_DEPTH + Math.max(elev.len, 1),
+      face: { origin: { x: x1 - RUN_DEPTH, z: rightZ0 }, dir: { x: 0, z: 1 }, len: Math.max(elev.len, 1), top: ELEV_TOP },
+      plan: { x: x1 - RUN_DEPTH, z: rightZ0, w: RUN_DEPTH, d: Math.max(elev.len, 1) },
+      depth: rightZ0 + Math.max(elev.len, 1),
       mirror: false,
       endCap:
         elev.frames.length > 0
           ? {
               face: {
-                origin: { x: x1 - RUN_DEPTH, z: RUN_DEPTH + elev.len },
+                origin: { x: x1 - RUN_DEPTH, z: rightZ0 + elev.len },
                 dir: { x: 1, z: 0 },
                 len: RUN_DEPTH,
                 top: ELEV_TOP,
@@ -266,7 +272,7 @@ export function computeScene(design: Design): SceneLayout3 {
     })
     pushTops('right', elev, (u0, u1) => ({
       x: x1 - RUN_DEPTH - COUNTER_OVERHANG,
-      z: RUN_DEPTH + u0,
+      z: rightZ0 + u0,
       w: RUN_DEPTH + COUNTER_OVERHANG,
       d: u1 - u0,
     }))
@@ -275,8 +281,9 @@ export function computeScene(design: Design): SceneLayout3 {
   let islandZ0 = 0
   if (hasIsland) {
     const elev = computeRunElevation(islandFrames, design.appliances)
-    islandZ0 = RUN_DEPTH + Math.max(lenL, lenR) + ISLAND_AISLE
-    const ix0 = -Math.max(elev.len, 40) / 2
+    const wingEnd = Math.max(hasL ? leftZ0 + lenL : 0, hasR ? rightZ0 + lenR : 0, RUN_DEPTH)
+    islandZ0 = design.islandPos?.z ?? wingEnd + ISLAND_AISLE
+    const ix0 = (design.islandPos?.x ?? 0) - Math.max(elev.len, 40) / 2
     runs.push({
       id: 'island',
       frames: islandFrames,
@@ -300,10 +307,12 @@ export function computeScene(design: Design): SceneLayout3 {
   }
 
   // plan extents of built things
-  const z1 = hasIsland ? islandZ0 + RUN_DEPTH : Math.max(RUN_DEPTH, RUN_DEPTH + Math.max(lenL, lenR))
+  const wingMax = Math.max(hasL ? (leftCorner ? CORNER : RUN_DEPTH) + lenL : 0, hasR ? (rightCorner ? CORNER : RUN_DEPTH) + lenR : 0)
+  const z1 = Math.max(RUN_DEPTH, wingMax, hasIsland ? islandZ0 + RUN_DEPTH : 0)
+  const islandCx = design.islandPos?.x ?? 0
   const extents = {
-    x0: Math.min(x0, hasIsland ? -wIsland / 2 : x0),
-    x1: Math.max(x1, hasIsland ? wIsland / 2 : x1),
+    x0: Math.min(x0, hasIsland ? islandCx - wIsland / 2 : x0),
+    x1: Math.max(x1, hasIsland ? islandCx + wIsland / 2 : x1),
     z0: 0,
     z1,
   }

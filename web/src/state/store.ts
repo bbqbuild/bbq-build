@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { CornerId, Design, FrameFinish, FrameWidth, GroundType, LayoutShape, PlacedAppliance, RunId, Selection, Zone } from '../types'
-import { cornerFor, runsForLayout } from '../types'
+import { FRAME_WIDTHS, cornerFor, runsForLayout } from '../types'
 import { getAppliance, fitsFrame, registerCustomAppliances } from '../catalog/appliances'
 import { checkPlacement } from '../catalog/compat'
 import type { ApplianceType } from '../types'
@@ -66,6 +66,7 @@ interface BuilderState {
   setGround: (patch: Partial<{ type: GroundType; width: number; depth: number }>) => void
   setLayout: (layout: LayoutShape) => void
   setIsland: (island: boolean) => void
+  setIslandPos: (x: number, z: number) => void
   addFrame: (width: FrameWidth, index?: number, lowered?: boolean, run?: RunId) => string
   removeFrame: (id: string) => void
   moveFrame: (id: string, toIndex: number, run?: RunId) => void
@@ -78,6 +79,8 @@ interface BuilderState {
   setCorner: (side: CornerId, present: boolean) => void
   setAllFinishes: (finish: FrameFinish) => void
   placeAppliance: (frameId: string, typeId: string) => boolean
+  /** Drop an appliance on blank space: auto-create a compatible frame and place it. */
+  addFrameForAppliance: (typeId: string, run?: RunId, index?: number) => boolean
   removeAppliance: (id: string) => void
   clearAll: () => void
   markSaved: (savedId: number) => void
@@ -185,7 +188,13 @@ export const useStore = create<BuilderState>((set, get) => {
         d.island = island
         if (!island) {
           for (const f of d.frames) if (f.run === 'island') f.run = 'back'
+          delete d.islandPos
         }
+      }),
+
+    setIslandPos: (x, z) =>
+      commit((d) => {
+        d.islandPos = { x: Math.round(x / 5) * 5, z: Math.round(z / 5) * 5 }
       }),
 
     addFrame: (width, index, lowered, run = 'back') => {
@@ -304,6 +313,28 @@ export const useStore = create<BuilderState>((set, get) => {
         d.appliances.push({ id, typeId, frameId, zone: type.zone })
       })
       set({ selection: { kind: 'appliance', id } })
+      return true
+    },
+
+    addFrameForAppliance: (typeId, run = 'back', index) => {
+      let type
+      try {
+        type = getAppliance(typeId)
+      } catch {
+        return false
+      }
+      // smallest standard width that fits, else a custom width for odd units
+      const std = FRAME_WIDTHS.find((w) => w >= type.minFrameWidth)
+      const width = (std ?? Math.ceil(type.minFrameWidth / 5) * 5) as FrameWidth
+      const lowered = type.mount === 'kamado'
+      const { addFrame, placeAppliance } = get()
+      const frameId = addFrame(width, index, lowered, run)
+      const ok = placeAppliance(frameId, typeId)
+      if (!ok) {
+        // shouldn't happen (frame was sized for it), but don't leave an orphan frame
+        get().removeFrame(frameId)
+        return false
+      }
       return true
     },
 
