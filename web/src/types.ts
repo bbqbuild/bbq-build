@@ -23,6 +23,8 @@ export interface Corner {
   lowered?: boolean
   /** diagonal (pentagon, 45° front) or square (box). Default diagonal. */
   style?: 'diagonal' | 'square'
+  /** a counter-level oven placed on the corner (typeId of an on-counter oven) */
+  top?: string
 }
 
 export type FrameWidth = 40 | 60 | 80 | 90

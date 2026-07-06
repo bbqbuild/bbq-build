@@ -1,4 +1,4 @@
-import type { Design, Frame, PlacedAppliance, RunId } from '../types'
+import type { CornerId, Design, Frame, PlacedAppliance, RunId } from '../types'
 import {
   CORNER,
   COUNTER_OVERHANG,
@@ -113,6 +113,8 @@ export interface CounterTop {
   /** counter surface height above ground */
   y: number
   mirror?: boolean
+  /** set when this top belongs to a corner unit (plan view selection) */
+  corner?: CornerId
 }
 
 export interface SceneLayout3 {
@@ -203,14 +205,14 @@ export function computeScene(design: Design): SceneLayout3 {
   if (hasL && leftCorner) {
     cornerCount++
     const y = leftCorner.lowered ? 64 : 88
-    counterTops.push({ runId: 'back', x: x0, z: 0, w: CORNER, d: RUN_DEPTH + COUNTER_OVERHANG, y, mirror: true })
-    counterTops.push({ runId: 'back', x: x0, z: RUN_DEPTH, w: RUN_DEPTH, d: CORNER - RUN_DEPTH, y, mirror: true })
+    counterTops.push({ runId: 'back', x: x0, z: 0, w: CORNER, d: RUN_DEPTH + COUNTER_OVERHANG, y, mirror: true, corner: 'left' })
+    counterTops.push({ runId: 'back', x: x0, z: RUN_DEPTH, w: RUN_DEPTH, d: CORNER - RUN_DEPTH, y, mirror: true, corner: 'left' })
   }
   if (hasR && rightCorner) {
     cornerCount++
     const y = rightCorner.lowered ? 64 : 88
-    counterTops.push({ runId: 'back', x: x1 - CORNER, z: 0, w: CORNER, d: RUN_DEPTH + COUNTER_OVERHANG, y })
-    counterTops.push({ runId: 'back', x: x1 - RUN_DEPTH, z: RUN_DEPTH, w: RUN_DEPTH, d: CORNER - RUN_DEPTH, y })
+    counterTops.push({ runId: 'back', x: x1 - CORNER, z: 0, w: CORNER, d: RUN_DEPTH + COUNTER_OVERHANG, y, corner: 'right' })
+    counterTops.push({ runId: 'back', x: x1 - RUN_DEPTH, z: RUN_DEPTH, w: RUN_DEPTH, d: CORNER - RUN_DEPTH, y, corner: 'right' })
   }
 
   const leftZ0 = hasL && leftCorner ? CORNER : RUN_DEPTH

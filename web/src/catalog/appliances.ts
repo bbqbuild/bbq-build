@@ -116,7 +116,7 @@ export const APPLIANCES: ApplianceType[] = [
     description: 'Oval ceramic kamado with split-zone firebox. Needs a lowered table.',
     icon: '🪨',
   },
-  // ---- Top zone: on-counter ----
+  // ---- Top zone: on-counter (also placeable on a corner) ----
   {
     id: 'pizza-60',
     name: 'Countertop Pizza Oven 60',
@@ -128,6 +128,30 @@ export const APPLIANCES: ApplianceType[] = [
     price: 1190,
     description: 'Gas-fired stone deck oven. 500 °C in 15 minutes, neapolitan in 90 seconds.',
     icon: '🍕',
+  },
+  {
+    id: 'gozney-dome',
+    name: 'Gozney Dome',
+    shortName: 'Gozney Dome',
+    brand: 'Gozney',
+    zone: 'top',
+    mount: 'oncounter',
+    minFrameWidth: 60,
+    price: 1799,
+    description: 'Dual-fuel dome oven — wood or gas. Rolling flame, 500 °C, steam injection.',
+    icon: '🍕',
+  },
+  {
+    id: 'taboon-90',
+    name: 'Taboon Clay Oven',
+    shortName: 'Taboon',
+    brand: 'ClayFire',
+    zone: 'top',
+    mount: 'oncounter',
+    minFrameWidth: 60,
+    price: 1290,
+    description: 'Domed clay taboon / tandoor for laffa, flatbreads, kebabs and slow roasts.',
+    icon: '🫓',
   },
   // ---- Base zone: under-counter ----
   {
@@ -246,6 +270,9 @@ export function getAppliance(typeId: string): ApplianceType {
 export function fitsFrame(type: ApplianceType, frameWidth: number): boolean {
   return frameWidth >= type.minFrameWidth
 }
+
+/** Counter-level ovens that can sit on a corner unit. */
+export const CORNER_OVENS = APPLIANCES.filter((a) => a.mount === 'oncounter')
 
 /** Compact catalog reference for AI prompts. */
 export function catalogSummary(custom: ApplianceType[] = []): string {

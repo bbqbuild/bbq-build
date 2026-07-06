@@ -57,6 +57,8 @@ export const TOP_HEIGHTS: Record<string, number> = {
   'sink-40': 12,
   'icebin-40': 8,
   'pizza-60': 46,
+  'gozney-dome': 40,
+  'taboon-90': 44,
   'egg-xl': 58,
   'primo-xl': 44,
 }

@@ -16,6 +16,7 @@ import { SpecModal } from './ui/SpecModal'
 import { Toasts } from './ui/Toasts'
 import { TopBar } from './ui/TopBar'
 import { ValidateModal } from './ui/ValidateModal'
+import { DropDecisionModal } from './ui/DropDecisionModal'
 import { useToasts } from './ui/toast'
 import type { SavedDesign } from './types'
 
@@ -309,6 +310,7 @@ export default function App() {
       {modal === 'spec' && <SpecModal onClose={() => setModal('none')} />}
       {modal === 'designs' && <DesignsModal onClose={() => setModal('none')} />}
       {modal === 'validate' && <ValidateModal onClose={() => setModal('none')} />}
+      <DropDecisionModal />
       <Toasts />
     </div>
   )

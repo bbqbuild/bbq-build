@@ -29,6 +29,21 @@ export type DragPayload =
   | { kind: 'appliance'; typeId: string }
   | { kind: 'frame'; width: FrameWidth; lowered?: boolean }
 
+/** A dropped appliance that couldn't be placed cleanly — awaiting a user choice. */
+export interface PendingDrop {
+  typeId: string
+  frameId: string
+  /** fallback run + index for "add a new frame instead" */
+  run: RunId
+  index?: number
+  zone: Zone
+  /** existing same-zone appliance id, if the slot is occupied */
+  occupantId?: string
+  /** whether the appliance actually fits the frame (width / mount / pairing) */
+  fits: boolean
+  reason?: string
+}
+
 interface BuilderState {
   design: Design
   selection: Selection
@@ -82,6 +97,7 @@ interface BuilderState {
   setCornerLowered: (side: CornerId, lowered: boolean) => void
   setCorner: (side: CornerId, present: boolean, style?: 'diagonal' | 'square') => void
   setCornerStyle: (side: CornerId, style: 'diagonal' | 'square') => void
+  setCornerAppliance: (side: CornerId, typeId: string | null) => void
   /** which run newly-added frames go into (drives shape via corners) */
   activeRun: RunId
   setActiveRun: (run: RunId) => void
@@ -91,6 +107,10 @@ interface BuilderState {
   placeAppliance: (frameId: string, typeId: string) => boolean
   /** Drop an appliance on blank space: auto-create a compatible frame and place it. */
   addFrameForAppliance: (typeId: string, run?: RunId, index?: number) => boolean
+  /** Drop onto a specific frame: place if it fits & the slot is free, else prompt. */
+  tryDropAppliance: (frameId: string, typeId: string, run: RunId, index?: number) => void
+  pendingDrop: PendingDrop | null
+  resolvePendingDrop: (choice: 'replace' | 'newframe' | 'cancel') => void
   removeAppliance: (id: string) => void
   clearAll: () => void
   markSaved: (savedId: number) => void
@@ -131,6 +151,7 @@ export const useStore = create<BuilderState>((set, get) => {
     design: emptyDesign(),
     selection: { kind: 'none' },
     savedId: null,
+    pendingDrop: null,
     dirty: false,
     history: [],
     future: [],
@@ -294,6 +315,13 @@ export const useStore = create<BuilderState>((set, get) => {
         d.corners[side] = { ...(d.corners[side] ?? { finish: d.frames[0]?.finish ?? 'graphite' }), style }
       }),
 
+    setCornerAppliance: (side, typeId) =>
+      commit((d) => {
+        d.corners = d.corners ?? {}
+        const cur = d.corners[side] ?? { finish: d.frames[0]?.finish ?? 'graphite' }
+        d.corners[side] = { ...cur, top: typeId ?? undefined }
+      }),
+
     setCounterMaterial: (id) =>
       commit((d) => {
         d.counterMaterial = id
@@ -427,6 +455,57 @@ export const useStore = create<BuilderState>((set, get) => {
       return true
     },
 
+    tryDropAppliance: (frameId, typeId, run, index) => {
+      const { design } = get()
+      const frame = design.frames.find((f) => f.id === frameId)
+      let type
+      try {
+        type = getAppliance(typeId)
+      } catch {
+        return
+      }
+      if (!frame) {
+        get().addFrameForAppliance(typeId, run, index)
+        return
+      }
+      const check = checkPlacement(design, frame, type)
+      const occupant = design.appliances.find((a) => a.frameId === frameId && a.zone === type.zone)
+      // clean placement: fits and the zone slot is free → just drop it in
+      if (check.ok && !occupant) {
+        get().placeAppliance(frameId, typeId)
+        return
+      }
+      // otherwise ask the user what to do
+      set({
+        pendingDrop: {
+          typeId,
+          frameId,
+          run,
+          index,
+          zone: type.zone,
+          occupantId: occupant?.id,
+          fits: check.ok,
+          reason: !check.ok
+            ? check.reason
+            : occupant
+              ? `That frame already has ${getAppliance(occupant.typeId).shortName} on ${type.zone === 'top' ? 'the counter' : 'the base'}.`
+              : undefined,
+        },
+      })
+    },
+
+    resolvePendingDrop: (choice) => {
+      const { pendingDrop } = get()
+      if (!pendingDrop) return
+      set({ pendingDrop: null })
+      if (choice === 'cancel') return
+      if (choice === 'replace' && pendingDrop.fits) {
+        get().placeAppliance(pendingDrop.frameId, pendingDrop.typeId) // replaces same-zone occupant
+      } else if (choice === 'newframe') {
+        get().addFrameForAppliance(pendingDrop.typeId, pendingDrop.run, pendingDrop.index)
+      }
+    },
+
     removeAppliance: (id) => {
       commit((d) => {
         d.appliances = d.appliances.filter((a) => a.id !== id)
@@ -553,6 +632,10 @@ export function priceBreakdown(design: Design, unit: Unit = 'cm'): { lines: Pric
   }
   const applCounts = new Map<string, number>()
   for (const a of design.appliances) applCounts.set(a.typeId, (applCounts.get(a.typeId) ?? 0) + 1)
+  for (const side of ['left', 'right'] as const) {
+    const c = cornerFor(design, side)
+    if (c?.top) applCounts.set(c.top, (applCounts.get(c.top) ?? 0) + 1)
+  }
   for (const [typeId, qty] of applCounts) {
     const t = getAppliance(typeId)
     lines.push({ label: t.name, detail: t.brand, qty, unit: t.price, total: t.price * qty })

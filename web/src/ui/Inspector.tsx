@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { APPLIANCES, fitsFrame, getAppliance } from '../catalog/appliances'
+import { APPLIANCES, CORNER_OVENS, fitsFrame, getAppliance } from '../catalog/appliances'
 import { checkPlacement } from '../catalog/compat'
 import { COUNTER_MATERIALS, FINISHES, counterMaterial, frameSpecByWidth, GROUND_TYPES } from '../catalog/frames'
 import { applianceForZone, formatPrice, priceBreakdown, useStore } from '../state/store'
@@ -317,6 +317,57 @@ function CounterPanel() {
   )
 }
 
+function CornerOvenSlot({ side, current }: { side: 'left' | 'right'; current?: string }) {
+  const setCornerAppliance = useStore((s) => s.setCornerAppliance)
+  const [picking, setPicking] = useState(false)
+  const type = current ? getAppliance(current) : null
+  return (
+    <section className="slot">
+      <h3>Counter oven <span className="h-hint">pizza / taboon</span></h3>
+      {type ? (
+        <div className="slot-current">
+          <span className="appliance-icon">{type.icon}</span>
+          <div className="appliance-meta">
+            <strong>{type.shortName}</strong>
+            <span>{formatPrice(type.price)}</span>
+          </div>
+          <button className="btn btn-icon" title="Remove" onClick={() => setCornerAppliance(side, null)}>
+            ✕
+          </button>
+        </div>
+      ) : (
+        <p className="hint">Empty — corners take a counter-level oven.</p>
+      )}
+      {picking ? (
+        <div className="slot-options">
+          {CORNER_OVENS.map((t) => (
+            <button
+              key={t.id}
+              className="slot-option"
+              onClick={() => {
+                setCornerAppliance(side, t.id)
+                setPicking(false)
+              }}
+              title={t.description}
+            >
+              <span className="appliance-icon">{t.icon}</span>
+              <span className="slot-option-name">{t.shortName}</span>
+              <span className="slot-option-price">{formatPrice(t.price)}</span>
+            </button>
+          ))}
+          <button className="btn btn-ghost" onClick={() => setPicking(false)}>
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button className="btn btn-ghost" onClick={() => setPicking(true)}>
+          {type ? 'Swap oven…' : '+ Add oven'}
+        </button>
+      )}
+    </section>
+  )
+}
+
 function CornerPanel({ side }: { side: 'left' | 'right' }) {
   const design = useStore((s) => s.design)
   const setCornerFinish = useStore((s) => s.setCornerFinish)
@@ -366,6 +417,7 @@ function CornerPanel({ side }: { side: 'left' | 'right' }) {
         <input type="checkbox" checked={Boolean(corner.lowered)} onChange={(e) => setCornerLowered(side, e.target.checked)} />
         <span>Lowered counter</span>
       </label>
+      <CornerOvenSlot side={side} current={corner.top} />
       <dl className="facts">
         <div>
           <dt>{corner.style === 'square' ? 'Square' : 'Diagonal'} junction</dt>

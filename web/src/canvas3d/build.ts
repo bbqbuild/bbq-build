@@ -255,6 +255,40 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
       mesh.receiveShadow = true
       return mesh
     }
+    // a counter-level oven on the corner (Gozney / pizza / taboon)
+    const ovenTopY = bodyH + COUNTER_T
+    const ovenCx = x + CN / 2
+    const ovenCz = CN / 2
+    if (corner.top) {
+      const taboon = corner.top.startsWith('taboon')
+      const oven = new THREE.Group()
+      const r = 24
+      const domeMat = taboon
+        ? new THREE.MeshStandardMaterial({ color: '#b06a3c', roughness: 0.9 })
+        : new THREE.MeshStandardMaterial({ color: '#d8dce0', roughness: 0.4, metalness: 0.5 })
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(r, 22, 14, 0, Math.PI * 2, 0, Math.PI / 2), domeMat)
+      dome.scale.y = taboon ? 1.25 : 0.95
+      dome.position.y = ovenTopY + 1
+      dome.castShadow = true
+      dome.userData = { kind: 'corner', id: side }
+      oven.add(dome)
+      // glowing mouth / opening facing the interior (+? toward viewer)
+      const mouth = new THREE.Mesh(
+        new THREE.CircleGeometry(r * 0.42, 16, 0, Math.PI),
+        new THREE.MeshStandardMaterial({ color: '#1a120c', emissive: '#ff7a1a', emissiveIntensity: 0.8, roughness: 0.9 }),
+      )
+      mouth.position.set(0, ovenTopY + r * 0.42, r * 0.86)
+      mouth.rotation.x = 0
+      oven.add(mouth)
+      // chimney
+      const chimney = new THREE.Mesh(new THREE.CylinderGeometry(3, 3.4, taboon ? 8 : 12, 12), domeMat)
+      chimney.position.set(0, ovenTopY + r * (taboon ? 1.25 : 0.95) + 4, taboon ? 0 : -r * 0.3)
+      oven.add(chimney)
+      oven.position.set(ovenCx, 0, ovenCz)
+      group.add(oven)
+      pickables.push(oven)
+    }
+
     if (corner.style === 'square') {
       // plain box corner (90×90)
       const cbody = new THREE.Mesh(new THREE.BoxGeometry(CN, bodyH, CN), finishMat(corner.finish))

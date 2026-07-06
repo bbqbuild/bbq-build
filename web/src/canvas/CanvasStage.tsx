@@ -2,70 +2,30 @@ import { useEffect, useRef } from 'react'
 import { useStore } from '../state/store'
 import { getAppliance } from '../catalog/appliances'
 import { checkPlacement } from '../catalog/compat'
-import { GROUND_T, type RunId } from '../types'
+import { type RunId } from '../types'
 import { camera, fitTo, screenToWorld, zoomAt } from './camera'
-import { rectContains } from './layout'
-import { KX, KZ, faceInverse, faceTransform, project } from './projection'
-import { ELEV_TOP, computeScene, type RunScene, type SceneLayout3 } from './scene'
-import { renderScene, type RenderState } from './renderScene'
+import { computeScene, type RunScene, type SceneLayout3 } from './scene'
+import { type RenderState } from './renderScene'
+import {
+  frameForDrop,
+  framePlans,
+  planBounds,
+  planHitTest,
+  planRunUnderPointer,
+  renderPlan,
+  type PlanHit,
+} from './planScene'
 
-type Hit =
-  | { kind: 'appliance'; id: string; run: RunId }
-  | { kind: 'frame'; id: string; run: RunId }
-  | { kind: 'run'; run: RunId; u: number }
-  | { kind: 'ground' }
-  | null
+type Hit = PlanHit
 
-/** Map a world-screen point into each run's face; nearest (deepest) runs win. */
+/** Top-down plan hit-test (world-screen == plan coords). */
 function hitTest(scene: SceneLayout3, sx: number, sy: number): Hit {
-  const runs = [...scene.runs].sort((a, b) => b.depth - a.depth)
-  for (const run of runs) {
-    const local = faceInverse(run.face, sx, sy, run.mirror)
-    if (!local) continue
-    const { u, v } = local
-    if (u < 0 || u > run.elev.len || v < 0 || v > ELEV_TOP) continue
-    const y = v - ELEV_TOP // back to world y (0 ground, negative up)
-    // appliances first (top zone sticks out above counters)
-    for (const al of run.elev.appliances) {
-      if (rectContains(al.rect, u, y)) return { kind: 'appliance', id: al.placed.id, run: run.id }
-    }
-    for (const fl of run.elev.frames) {
-      // frame body + its counter band, down to the ground
-      if (rectContains({ x: fl.body.x, y: fl.counterTopY, w: fl.body.w, h: -fl.counterTopY }, u, y)) {
-        return { kind: 'frame', id: fl.frame.id, run: run.id }
-      }
-    }
-    // inside the face strip but not on a frame → run background (used for drops)
-    if (y > -ELEV_TOP && y < 0 && run.frames.length === 0) return { kind: 'run', run: run.id, u }
-  }
-  // ground: invert plan at y=0
-  const z = sy / KZ
-  const x = sx - z * KX
-  const g = scene.ground
-  if (x >= g.x && x <= g.x + g.w && z >= g.z && z <= g.z + g.d) return { kind: 'ground' }
-  // ground front face strip
-  const frontY = (g.z + g.d) * KZ
-  if (sy >= frontY && sy <= frontY + GROUND_T && x >= g.x && x <= g.x + g.w) return { kind: 'ground' }
-  return null
+  return planHitTest(scene, sx, sy)
 }
 
-/** Which run + insertion u the pointer is over (forgiving: nearest face by v range). */
+/** Which run + insertion u the pointer is over (nearest run band). */
 function runUnderPointer(scene: SceneLayout3, sx: number, sy: number): { run: RunScene; u: number } | null {
-  const runs = [...scene.runs].sort((a, b) => b.depth - a.depth)
-  let best: { run: RunScene; u: number; d: number } | null = null
-  for (const run of runs) {
-    const local = faceInverse(run.face, sx, sy, run.mirror)
-    if (!local) continue
-    const { u, v } = local
-    const margin = 40
-    if (u < -margin || u > run.elev.len + margin) continue
-    if (v < -20 || v > ELEV_TOP + 30) continue
-    const du = Math.max(0, -u, u - run.elev.len)
-    const dv = Math.max(0, ELEV_TOP - 110 - v) // prefer pointer near counter height
-    const d = du + dv * 0.2
-    if (!best || d < best.d) best = { run, u: Math.max(0, Math.min(run.elev.len, u)), d }
-  }
-  return best ? { run: best.run, u: best.u } : null
+  return planRunUnderPointer(scene, sx, sy)
 }
 
 function insertionIndexInRun(run: RunScene, u: number): number {
@@ -119,7 +79,7 @@ export function CanvasStage() {
       const scene = computeScene(s.design)
 
       if (!didInitialFit.current && wrap.clientWidth > 0) {
-        fitTo(scene.bounds, wrap.clientWidth, wrap.clientHeight)
+        fitTo(planBounds(scene), wrap.clientWidth, wrap.clientHeight)
         didInitialFit.current = true
       }
 
@@ -154,7 +114,7 @@ export function CanvasStage() {
         height: wrap.clientHeight,
         dpr: window.devicePixelRatio || 1,
       }
-      renderScene(ctx, rs)
+      renderPlan(ctx, rs)
       raf = requestAnimationFrame(frame)
     }
 
@@ -183,7 +143,7 @@ export function CanvasStage() {
     pointer.current = {
       downX: sx,
       downY: sy,
-      panStart: hit && hit.kind !== 'ground' && hit.kind !== 'run' ? null : { camX: camera.x, camY: camera.y },
+      panStart: hit && hit.kind !== 'ground' ? null : { camX: camera.x, camY: camera.y },
       frameDragId: hit?.kind === 'frame' ? hit.id : null,
       moved: false,
       hit,
@@ -203,7 +163,7 @@ export function CanvasStage() {
         frame: hit?.kind === 'frame' ? hit.id : null,
         appliance: hit?.kind === 'appliance' ? hit.id : null,
       }
-      canvasRef.current!.style.cursor = hit && hit.kind !== 'ground' && hit.kind !== 'run' ? 'pointer' : 'default'
+      canvasRef.current!.style.cursor = hit && hit.kind !== 'ground' ? 'pointer' : 'default'
       return
     }
 
@@ -232,8 +192,9 @@ export function CanvasStage() {
     const s = useStore.getState()
 
     if (!p.moved) {
-      if (!p.hit || p.hit.kind === 'run') s.select({ kind: 'none' })
+      if (!p.hit) s.select({ kind: 'none' })
       else if (p.hit.kind === 'ground') s.select({ kind: 'ground' })
+      else if (p.hit.kind === 'corner') s.select({ kind: 'corner', id: p.hit.id })
       else if (p.hit.kind === 'frame') s.select({ kind: 'frame', id: p.hit.id })
       else s.select({ kind: 'appliance', id: p.hit.id })
     } else if (p.frameDragId && frameDrag.current) {
@@ -269,18 +230,10 @@ export function CanvasStage() {
     const w = worldPos(e)
     const scene = computeScene(s.design)
     if (s.dragging.kind === 'appliance') {
-      const type = getAppliance(s.dragging.typeId)
-      const hit = hitTest(scene, w.x, w.y)
-      let frameId: string | null = null
-      if (hit?.kind === 'frame') frameId = hit.id
-      if (hit?.kind === 'appliance') {
-        for (const run of scene.runs) {
-          const al = run.elev.appliances.find((a) => a.placed.id === hit.id)
-          if (al) frameId = al.frame.frame.id
-        }
-      }
-      const frame = s.design.frames.find((f) => f.id === frameId)
-      dropTarget.current = frame && checkPlacement(s.design, frame, type).ok ? frame.id : null
+      // highlight whichever frame we'd act on (even if it's full/too small —
+      // the drop decides place vs. prompt vs. new frame)
+      const target = frameForDrop(scene, w.x, w.y)
+      dropTarget.current = target?.id ?? null
     } else if (s.dragging.kind === 'frame') {
       const target = runUnderPointer(scene, w.x, w.y)
       frameDropHint.current = target ? { runId: target.run.id, u: target.u } : null
@@ -292,13 +245,19 @@ export function CanvasStage() {
     const s = useStore.getState()
     const w = worldPos(e)
     const scene = computeScene(s.design)
-    if (s.dragging?.kind === 'appliance' && dropTarget.current) {
-      s.placeAppliance(dropTarget.current, s.dragging.typeId)
-    } else if (s.dragging?.kind === 'appliance') {
-      // blank space → auto-create a compatible frame at the drop point
-      const target = runUnderPointer(scene, w.x, w.y)
-      if (target) s.addFrameForAppliance(s.dragging.typeId, target.run.id, insertionIndexInRun(target.run, target.u))
-      else s.addFrameForAppliance(s.dragging.typeId, 'back')
+    if (s.dragging?.kind === 'appliance') {
+      const onFrame = frameForDrop(scene, w.x, w.y)
+      if (onFrame) {
+        // dropped on an existing frame → place, or prompt if full / too small
+        const target = runUnderPointer(scene, w.x, w.y)
+        const idx = target ? insertionIndexInRun(target.run, target.u) : undefined
+        s.tryDropAppliance(onFrame.id, s.dragging.typeId, onFrame.run, idx)
+      } else {
+        // blank space → auto-create a compatible frame at the drop point
+        const target = runUnderPointer(scene, w.x, w.y)
+        if (target) s.addFrameForAppliance(s.dragging.typeId, target.run.id, insertionIndexInRun(target.run, target.u))
+        else s.addFrameForAppliance(s.dragging.typeId, 'back')
+      }
     } else if (s.dragging?.kind === 'frame') {
       const target = runUnderPointer(scene, w.x, w.y)
       if (target) {
@@ -339,7 +298,7 @@ export function fitView() {
   const wrap = document.querySelector('.canvas-wrap') as HTMLElement | null
   if (!wrap) return
   const scene = computeScene(useStore.getState().design)
-  fitTo(scene.bounds, wrap.clientWidth, wrap.clientHeight)
+  fitTo(planBounds(scene), wrap.clientWidth, wrap.clientHeight)
 }
 
 // ---- QA helpers (scripts/qa.mjs) ----
@@ -362,22 +321,15 @@ declare global {
 if (typeof window !== 'undefined') {
   window.__bbqFrameScreen = (frameId: string) => {
     const scene = computeScene(useStore.getState().design)
-    for (const run of scene.runs) {
-      const fl = run.elev.frames.find((f) => f.frame.id === frameId)
-      if (!fl) continue
-      const t = faceTransform(run.face, run.mirror)
-      const u = fl.body.x + fl.body.w / 2
-      const v = ELEV_TOP - 40 // mid-body height
-      return toCanvasPx(t.e + u * t.a, t.f + u * t.b + v)
-    }
-    return null
+    const f = framePlans(scene).find((p) => p.id === frameId)
+    if (!f) return null
+    return toCanvasPx(f.x + f.w / 2, f.z + f.d / 2)
   }
   window.__bbqGroundScreen = () => {
     const scene = computeScene(useStore.getState().design)
     const g = scene.ground
     // a plan point on the platform in front of the kitchen
     const z = Math.min(g.z + g.d - 20, scene.extents.z1 + 40)
-    const p = project(g.x + g.w * 0.15, z, 0)
-    return toCanvasPx(p.x, p.y)
+    return toCanvasPx(g.x + g.w * 0.15, z)
   }
 }

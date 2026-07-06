@@ -461,6 +461,8 @@ export const PAINTERS: Record<string, Painter> = {
   'sink-40': sink,
   'icebin-40': icebin,
   'pizza-60': pizza,
+  'gozney-dome': pizza,
+  'taboon-90': pizza,
   'fridge-60': fridgeish('fridge'),
   'kegerator-60': fridgeish('keg'),
   'icemaker-60': fridgeish('ice'),

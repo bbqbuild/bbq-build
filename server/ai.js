@@ -176,15 +176,36 @@ async function scanUrl(url) {
   } catch (e) {
     throw Object.assign(new Error(`Couldn't open that URL (${e.message}). Paste a public product page.`), { status: 400 })
   }
-  // crude HTML → text, keep title/meta and body text
   const title = (html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || '').trim()
-  const text = html
+
+  // Structured data first — most retailers (Wayfair, Amazon, etc.) embed the
+  // product's name/brand/price/dimensions in JSON-LD or og:/meta tags. These
+  // carry the real specs; the visible body is mostly nav chrome.
+  const jsonld = [...html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)]
+    .map((m) => m[1].trim())
+    .filter((s) => /"@type"\s*:\s*"?Product/i.test(s) || /"offers"|"price"|"brand"/i.test(s))
+    .join('\n')
+    .slice(0, 5000)
+  const metas = [...html.matchAll(/<meta[^>]+(?:property|name)=["'](og:[^"']+|description|twitter:[^"']+)["'][^>]*content=["']([^"']*)["']/gi)]
+    .map((m) => `${m[1]}: ${m[2]}`)
+    .join('\n')
+    .slice(0, 1500)
+
+  // crude HTML → visible text as a fallback signal
+  const body = html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&[a-z]+;/gi, ' ')
     .replace(/\s+/g, ' ')
-    .slice(0, 6000)
+    .slice(0, 3500)
+  const text = [
+    jsonld && `STRUCTURED DATA (JSON-LD):\n${jsonld}`,
+    metas && `META TAGS:\n${metas}`,
+    `PAGE TEXT:\n${body}`,
+  ]
+    .filter(Boolean)
+    .join('\n\n')
 
   const structured = await callGemini({
     contents: [
@@ -194,8 +215,11 @@ async function scanUrl(url) {
           {
             text:
               `Extract the outdoor-kitchen appliance from this product page as JSON. ` +
-              `Category must be one of: ${CATEGORIES.join(', ')}. width_cm is the unit's width (cut-out width if given, else overall). ` +
-              `If it's not an outdoor kitchen appliance, set category to "" .\n\nTITLE: ${title}\nURL: ${url}\nPAGE: ${text}`,
+              `Category must be one of: ${CATEGORIES.join(', ')}. ` +
+              `(santamaria = open argentine/gaucho grills, kamado = ceramic eggs/smokers, icebin = drop-in ice bins.) ` +
+              `width_cm is the unit's width in centimeters (convert from inches if needed; cut-out width if given, else overall). ` +
+              `price_usd is the listed price. blurb is ONE short sentence. ` +
+              `If it's not an outdoor kitchen appliance, set category to "".\n\nTITLE: ${title}\nURL: ${url}\n\n${text}`,
           },
         ],
       },
