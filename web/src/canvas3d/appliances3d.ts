@@ -106,21 +106,44 @@ export function baseAppliance3d(placed: PlacedAppliance, type: ApplianceType, fr
   }
 
   if (base.startsWith('woodstore')) {
-    // open shelf with logs, no animation
+    // firewood stacked with the round cut ends facing the viewer, in a grid
+    // filling the opening. The cabinet body is a solid box, so (like the door
+    // panels) the logs seat their front ends PROUD of the face and run back
+    // into the cavity — otherwise they'd be buried inside the solid body.
     const shelf = new THREE.Group()
-    for (let r = 0; r < 3; r++) {
-      const count = Math.floor(openW / 8) - (r % 2)
-      for (let i = 0; i < count; i++) {
+    const rad = 3.6
+    const pitch = 7.6
+    const logLen = 22
+    const frontEnd = FRONT + 2.5 // round ends sit proud of the cabinet face
+    const cz = frontEnd - logLen / 2
+    const cols = Math.max(1, Math.floor(openW / pitch))
+    const vGap = pitch * 0.9
+    const rows = Math.max(1, Math.floor((openH - rad) / vGap))
+    for (let ry = 0; ry < rows; ry++) {
+      const stagger = (ry % 2) * (pitch / 2)
+      const rowCols = stagger ? cols - 1 : cols
+      const rx0 = -((rowCols - 1) * pitch) / 2
+      for (let cx = 0; cx < rowCols; cx++) {
         const log = new THREE.Mesh(
-          new THREE.CylinderGeometry(3.4, 3.4, openW - 6, 10),
-          new THREE.MeshStandardMaterial({ color: i % 2 ? '#a67c4e' : '#8a6038', roughness: 0.85 }),
+          new THREE.CylinderGeometry(rad, rad, logLen, 12),
+          new THREE.MeshStandardMaterial({
+            color: (cx + ry) % 2 ? '#b1855a' : '#946840',
+            roughness: 0.9,
+          }),
         )
-        log.rotation.z = Math.PI / 2
-        log.position.set(0, 8 + r * 7.4, FRONT - 4 - i * 8)
+        log.rotation.x = Math.PI / 2 // lie along depth: round ends face front
+        log.position.set(rx0 + cx * pitch, 9 + rad + ry * vGap, cz)
+        log.castShadow = true
+        // a slightly darker growth-ring face so the cut end reads as wood
+        const ring = new THREE.Mesh(
+          new THREE.CircleGeometry(rad * 0.96, 12),
+          new THREE.MeshStandardMaterial({ color: '#7a5330', roughness: 0.95 }),
+        )
+        ring.position.set(log.position.x, log.position.y, frontEnd + 0.1)
         shelf.add(log)
+        shelf.add(ring)
       }
     }
-    shelf.position.y = 6
     tag(shelf)
     meshes.push(shelf)
     return { meshes, parts }

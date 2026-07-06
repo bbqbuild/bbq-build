@@ -1,0 +1,13 @@
+import { launch3d } from './_helper.mjs'
+const { browser, page: p } = await launch3d()
+await p.goto('http://127.0.0.1:3000')
+await p.evaluate(()=>localStorage.clear()); await p.reload()
+await p.waitForSelector('.landing'); await p.click('.landing-cta'); await p.waitForSelector('.topbar')
+await p.evaluate(()=>{ const s=window.__bbq(); const a=s.addFrame(60); s.placeAppliance(a,'woodstore-40'); s.select({kind:'none'}) })
+await p.waitForTimeout(500)
+await p.evaluate(()=>{ window.dispatchEvent(new Event('bbq:fit')) })
+await p.waitForTimeout(300)
+await p.evaluate(()=>{ for(let i=0;i<3;i++) window.dispatchEvent(new CustomEvent('bbq:zoom',{detail:{factor:1.5}})) })
+await p.waitForTimeout(600)
+await p.screenshot({ path:'screenshots/woodstore.png', clip:{x:550,y:150,width:900,height:560} })
+await browser.close(); console.log('done')
