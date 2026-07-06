@@ -151,7 +151,9 @@ export function baseAppliance3d(placed: PlacedAppliance, type: ApplianceType, fr
     return { meshes, parts }
   }
 
-  const isFridge = /^(fridge|kegerator|icemaker)/.test(base)
+  const isIceMaker = base.startsWith('icemaker')
+  const isFridgey = /^(fridge|kegerator)/.test(base)
+  const isFridge = isFridgey || isIceMaker
   if (base.startsWith('doors') || base.startsWith('door') || isFridge) {
     const twin = base.startsWith('doors') // double doors
     if (twin) {
@@ -171,11 +173,27 @@ export function baseAppliance3d(placed: PlacedAppliance, type: ApplianceType, fr
       const hingeRight = Boolean(placed.flipped)
       const door = hingedDoor(openW, openH, hingeRight, PANEL_Z)
       door.pivot.position.set(hingeRight ? openW / 2 : -openW / 2, cy, PANEL_Z)
-      if (isFridge) {
-        // temp badge
+      const panel = door.pivot.children[0]
+      if (isIceMaker) {
+        // front-vented ice maker: louvered intake grille along the bottom + a
+        // small blue control display near the top — distinct from a fridge door
+        const ventMat = new THREE.MeshStandardMaterial({ color: '#6b7178', roughness: 0.5, metalness: 0.7 })
+        for (let i = 0; i < 4; i++) {
+          const slat = new THREE.Mesh(new THREE.BoxGeometry(openW * 0.72, 1.6, 1), ventMat)
+          slat.position.set(0, -openH / 2 + 6 + i * 3, 1.2)
+          panel.add(slat)
+        }
+        const display = new THREE.Mesh(
+          new THREE.BoxGeometry(openW * 0.42, 4, 0.6),
+          new THREE.MeshStandardMaterial({ color: '#0c1c26', emissive: '#2a8fd6', emissiveIntensity: 0.6, roughness: 0.4 }),
+        )
+        display.position.set(0, openH / 2 - 7, 1)
+        panel.add(display)
+      } else if (isFridgey) {
+        // brand badge on the door
         const badge = new THREE.Mesh(new THREE.BoxGeometry(12, 6, 0.4), black)
         badge.position.set(hingeRight ? -openW * 0.36 : openW * 0.36, openH * 0.28, 1)
-        door.pivot.children[0].add(badge)
+        panel.add(badge)
       }
       tag(door.pivot)
       meshes.push(door.pivot)

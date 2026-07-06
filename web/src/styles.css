@@ -2559,3 +2559,6 @@ input[type='range'] {
 }
 .wiz-summary { font-size: 13px; color: var(--text-dim); }
 .wiz-nav { display: flex; gap: 8px; }
+
+.merge-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.merge-row .btn { flex: 1; font-size: 12px; padding: 7px 6px; }

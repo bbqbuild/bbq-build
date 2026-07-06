@@ -10,7 +10,7 @@ function apiKey() {
   return key
 }
 
-async function callGemini({ contents, systemInstruction, tools, responseSchema, temperature = 0.4, maxOutputTokens = 2048 }) {
+async function callGemini({ contents, systemInstruction, tools, responseSchema, temperature = 0.4, maxOutputTokens = 2048, thinkingBudget }) {
   const body = {
     contents,
     generationConfig: { temperature, maxOutputTokens },
@@ -20,6 +20,12 @@ async function callGemini({ contents, systemInstruction, tools, responseSchema, 
   if (responseSchema) {
     body.generationConfig.responseMimeType = 'application/json'
     body.generationConfig.responseSchema = responseSchema
+  }
+  // Gemini 2.5 "thinking" consumes the output-token budget and can truncate a
+  // structured JSON reply mid-object. For deterministic extraction we don't need
+  // reasoning, so disable it (thinkingBudget: 0) and give the JSON the whole budget.
+  if (thinkingBudget !== undefined) {
+    body.generationConfig.thinkingConfig = { thinkingBudget }
   }
   const res = await fetch(`${GEMINI_BASE}/${MODEL}:generateContent`, {
     method: 'POST',
@@ -151,6 +157,7 @@ async function searchAppliances(query) {
     },
     temperature: 0.1,
     maxOutputTokens: 4096,
+    thinkingBudget: 0,
   })
 
   const { items } = parseJson(structured.text)
@@ -298,7 +305,8 @@ async function scanUrl(url) {
       required: ['brand', 'model', 'category', 'width_cm', 'price_usd', 'blurb'],
     },
     temperature: 0.1,
-    maxOutputTokens: 1024,
+    maxOutputTokens: 2048,
+    thinkingBudget: 0,
   })
   const item = parseJson(structured.text)
   if (!item.category || !CATEGORIES.includes(item.category)) {
@@ -373,6 +381,7 @@ async function validateBuild(design, catalogSummary) {
     },
     temperature: 0.1,
     maxOutputTokens: 2048,
+    thinkingBudget: 0,
   })
   return parseJson(text)
 }

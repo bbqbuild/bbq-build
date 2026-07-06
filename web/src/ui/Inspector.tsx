@@ -123,6 +123,7 @@ function GroundPanel() {
 function FramePanel({ frame }: { frame: Frame }) {
   const design = useStore((s) => s.design)
   const removeFrame = useStore((s) => s.removeFrame)
+  const mergeFrame = useStore((s) => s.mergeFrame)
   const setFrameFinish = useStore((s) => s.setFrameFinish)
   const setFrameLowered = useStore((s) => s.setFrameLowered)
   const setFrameWidth = useStore((s) => s.setFrameWidth)
@@ -131,6 +132,16 @@ function FramePanel({ frame }: { frame: Frame }) {
   const push = useToasts((s) => s.push)
   const spec = frameSpecByWidth.get(frame.width as never)
   const index = design.frames.findIndex((f) => f.id === frame.id)
+
+  // adjacent frames in the same run; a side is mergeable only if the neighbour
+  // exists and carries no appliance in either zone
+  const runFrames = design.frames.filter((f) => (f.run ?? 'back') === (frame.run ?? 'back'))
+  const rIdx = runFrames.findIndex((f) => f.id === frame.id)
+  const neighbour = (dir: 'left' | 'right') => (dir === 'left' ? runFrames[rIdx - 1] : runFrames[rIdx + 1])
+  const mergeable = (dir: 'left' | 'right') => {
+    const n = neighbour(dir)
+    return Boolean(n) && !design.appliances.some((a) => a.frameId === neighbour(dir)!.id)
+  }
 
   return (
     <div className="panel">
@@ -191,6 +202,30 @@ function FramePanel({ frame }: { frame: Frame }) {
           <dd>{spec ? formatPrice(spec.price) : '—'}</dd>
         </div>
       </dl>
+      {(neighbour('left') || neighbour('right')) && (
+        <div className="merge-row">
+          {neighbour('left') && (
+            <button
+              className="btn btn-ghost"
+              disabled={!mergeable('left')}
+              title={mergeable('left') ? 'Combine with the empty cabinet on the left' : 'The left cabinet has an appliance — empty it first'}
+              onClick={() => mergeFrame(frame.id, 'left')}
+            >
+              ⟵ Merge left
+            </button>
+          )}
+          {neighbour('right') && (
+            <button
+              className="btn btn-ghost"
+              disabled={!mergeable('right')}
+              title={mergeable('right') ? 'Combine with the empty cabinet on the right' : 'The right cabinet has an appliance — empty it first'}
+              onClick={() => mergeFrame(frame.id, 'right')}
+            >
+              Merge right ⟶
+            </button>
+          )}
+        </div>
+      )}
       <button className="btn btn-danger-ghost" onClick={() => removeFrame(frame.id)}>
         Remove frame
       </button>

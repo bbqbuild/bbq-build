@@ -88,6 +88,8 @@ interface BuilderState {
   setIslandPos: (x: number, z: number) => void
   addFrame: (width: number, index?: number, lowered?: boolean, run?: RunId) => string
   removeFrame: (id: string) => void
+  /** absorb the adjacent (empty) frame on one side into this one; returns false if not possible */
+  mergeFrame: (id: string, dir: 'left' | 'right') => boolean
   moveFrame: (id: string, toIndex: number, run?: RunId) => void
   setFrameFinish: (id: string, finish: FrameFinish) => void
   setFrameLowered: (id: string, lowered: boolean) => boolean
@@ -406,6 +408,25 @@ export const useStore = create<BuilderState>((set, get) => {
         d.appliances = d.appliances.filter((a) => a.frameId !== id)
       })
       set({ selection: { kind: 'none' } })
+    },
+
+    mergeFrame: (id, dir) => {
+      const { design } = get()
+      const frame = design.frames.find((f) => f.id === id)
+      if (!frame) return false
+      const run = frame.run ?? 'back'
+      const runFrames = design.frames.filter((f) => (f.run ?? 'back') === run)
+      const idx = runFrames.findIndex((f) => f.id === id)
+      const neighbor = dir === 'left' ? runFrames[idx - 1] : runFrames[idx + 1]
+      // only merge an existing, EMPTY neighbour (no appliance in either zone)
+      if (!neighbor || design.appliances.some((a) => a.frameId === neighbor.id)) return false
+      commit((d) => {
+        const f = d.frames.find((x) => x.id === id)!
+        f.width += neighbor.width
+        d.frames = d.frames.filter((x) => x.id !== neighbor.id)
+      })
+      set({ selection: { kind: 'frame', id } })
+      return true
     },
 
     moveFrame: (id, toIndex, run) =>
