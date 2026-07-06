@@ -1,0 +1,11 @@
+import { launch3d } from './_helper.mjs'
+const { browser, page: p } = await launch3d()
+await p.goto('http://127.0.0.1:3000')
+await p.evaluate(()=>{localStorage.clear(); localStorage.setItem('bbq_view','3d')})
+await p.reload()
+await p.waitForSelector('.landing'); await p.click('.landing-cta'); await p.waitForSelector('.topbar')
+await p.evaluate(()=>{ const s=window.__bbq(); const a=s.addFrame(90); s.placeAppliance(a,'grill-90'); s.setIsland(true); s.addFrame(90,undefined,false,'island'); const b=s.addFrame(60,undefined,false,'island'); s.placeAppliance(b,'doors-60'); s.setIslandBar(true) })
+await p.waitForTimeout(800); await p.keyboard.press('f'); await p.waitForTimeout(500)
+await p.screenshot({ path:'screenshots/islandbar.png', clip:{x:150,y:60,width:1350,height:720} })
+console.log('bar set:', await p.evaluate(()=>window.__bbq().design.islandBar))
+await browser.close()

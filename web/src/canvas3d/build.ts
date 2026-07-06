@@ -94,11 +94,13 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
     } else if (run.id === 'island') {
       const ox = run.face.origin.x
       const z0 = run.plan.z
+      // bar islands face the cook (−z, toward the main run); guests sit on the +z side
+      const bar = Boolean(design.islandBar)
       basis = {
         id: 'island',
-        rotY: 0,
-        pos: (u, y) => new THREE.Vector3(ox + u, y, z0 + RUN_DEPTH / 2),
-        uOf: (p) => p.x - ox,
+        rotY: bar ? Math.PI : 0,
+        pos: (u, y) => new THREE.Vector3(ox + (bar ? run.elev.len - u : u), y, z0 + RUN_DEPTH / 2),
+        uOf: (p) => (bar ? run.elev.len - (p.x - ox) : p.x - ox),
         len: run.elev.len,
       }
     } else if (run.id === 'left') {
@@ -317,6 +319,47 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
       slat.position.set(x, H + 16, (z0 + z1) / 2)
       slat.castShadow = true
       group.add(slat)
+    }
+  }
+
+  // ---- island bar: guest-side overhang + stools ----
+  if (design.island && design.islandBar) {
+    const island = scene2d.runs.find((r) => r.id === 'island')
+    if (island && island.frames.length) {
+      const p = island.plan
+      const counterTopY = 88 + COUNTER_T // approx; matches standard frame counters
+      const overhang = 34
+      // guest side is +z (front, toward viewer); extend the counter there
+      const bar = new THREE.Mesh(
+        new THREE.BoxGeometry(p.w + COUNTER_OVERHANG * 2, COUNTER_T, overhang),
+        counterMat.clone(),
+      )
+      const guestZ = p.z + p.d + COUNTER_OVERHANG + overhang / 2
+      bar.position.set(p.x + p.w / 2, counterTopY - COUNTER_T / 2, guestZ)
+      bar.castShadow = true
+      bar.userData = { kind: 'counter', run: 'island' }
+      group.add(bar)
+      pickables.push(bar)
+      // stools along the guest edge
+      const stoolMat = new THREE.MeshStandardMaterial({ color: '#3a3f45', roughness: 0.6, metalness: 0.4 })
+      const seatMat = new THREE.MeshStandardMaterial({ color: '#6b4a2b', roughness: 0.8 })
+      const n = Math.max(2, Math.round(p.w / 60))
+      const stoolZ = guestZ + overhang / 2 + 22
+      for (let i = 0; i < n; i++) {
+        const sx = p.x + ((i + 0.5) * p.w) / n
+        const seatY = 62
+        const seat = new THREE.Mesh(new THREE.CylinderGeometry(15, 15, 4, 16), seatMat)
+        seat.position.set(sx, seatY, stoolZ)
+        seat.castShadow = true
+        group.add(seat)
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(2, 3, seatY, 10), stoolMat)
+        leg.position.set(sx, seatY / 2, stoolZ)
+        group.add(leg)
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(11, 1, 8, 18), stoolMat)
+        ring.rotation.x = Math.PI / 2
+        ring.position.set(sx, 20, stoolZ)
+        group.add(ring)
+      }
     }
   }
 

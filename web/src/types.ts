@@ -66,6 +66,8 @@ export interface Design {
   island?: boolean
   /** island placement on the plan: center-x and back-edge z. Absent → auto. */
   islandPos?: { x: number; z: number }
+  /** island is a bar: appliances face the cook, counter overhangs the guest side with stools */
+  islandBar?: boolean
   frames: Frame[]
   appliances: PlacedAppliance[]
   /** Corner units per side. Missing key → default corner for active wings; explicit null → removed. */

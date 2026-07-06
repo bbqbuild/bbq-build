@@ -89,13 +89,10 @@ await page.mouse.up()
 st = await getState()
 check('drag reorder moved frame', st.frames[st.frames.length - 1] === 'back:90')
 
-// switch to L-right layout and drag a frame into the right wing
-await page.click('text=Structure')
-const coll = await page.$('.collapsible-head')
-if (coll) { await coll.click(); await page.waitForTimeout(200) }
-await page.click('.layout-chip:has-text("L right")')
+// add a corner unit → opens a right wing (corner-driven layout)
+await page.evaluate(() => window.__bbq().addCornerUnit('diagonal'))
 st = await getState()
-check('layout is l-right', st.layout === 'l-right')
+check('corner opens l-right', st.layout === 'l-right')
 
 const dragInfo = await page.evaluate(() => {
   const s = window.__bbq()

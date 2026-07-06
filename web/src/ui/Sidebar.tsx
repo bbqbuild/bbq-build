@@ -54,6 +54,8 @@ function BuildTab() {
   const island = useStore((s) => Boolean(s.design.island))
   const pergola = useStore((s) => Boolean(s.design.pergola))
   const setPergola = useStore((s) => s.setPergola)
+  const islandBar = useStore((s) => Boolean(s.design.islandBar))
+  const setIslandBar = useStore((s) => s.setIslandBar)
   const activeRun = useStore((s) => s.activeRun)
   const layout = useStore((s) => s.design.layout ?? 'straight')
   const setGround = useStore((s) => s.setGround)
@@ -189,6 +191,12 @@ function BuildTab() {
           <input type="checkbox" checked={island} onChange={(e) => setIsland(e.target.checked)} />
           <span>Island in front</span>
         </label>
+        {island && (
+          <label className="check-row" title="Counter overhangs one side with bar stools; appliances face the cook">
+            <input type="checkbox" checked={islandBar} onChange={(e) => setIslandBar(e.target.checked)} />
+            <span>Bar seating on island</span>
+          </label>
+        )}
         <label className="check-row" title="A slatted pergola over the kitchen">
           <input type="checkbox" checked={pergola} onChange={(e) => setPergola(e.target.checked)} />
           <span>Pergola overhead</span>
