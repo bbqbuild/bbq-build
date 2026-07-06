@@ -20,13 +20,18 @@ export interface PlanRect {
 }
 
 /** Plan footprint of every frame, tagged with its id/run (for hit-test + outline). */
+/** Screen x for a horizontal run segment [u, u+w] — mirrors reversed runs (island bar). */
+function hx(run: RunScene, u: number, w: number): number {
+  return run.reversed ? run.face.origin.x + run.elev.len - u - w : run.face.origin.x + u
+}
+
 export function framePlans(scene: SceneLayout3): Array<PlanRect & { id: string; run: RunId; frame: Frame }> {
   const out: Array<PlanRect & { id: string; run: RunId; frame: Frame }> = []
   for (const run of scene.runs) {
     const horizontal = run.face.dir.x !== 0
     for (const fl of run.elev.frames) {
       const r = horizontal
-        ? { x: run.face.origin.x + fl.body.x, z: run.plan.z, w: fl.body.w, d: RUN_DEPTH }
+        ? { x: hx(run, fl.body.x, fl.body.w), z: run.plan.z, w: fl.body.w, d: RUN_DEPTH }
         : { x: run.plan.x, z: run.face.origin.z + fl.body.x, w: RUN_DEPTH, d: fl.body.w }
       out.push({ ...r, id: fl.frame.id, run: run.id, frame: fl.frame })
     }
@@ -44,7 +49,7 @@ export function topAppliancePlans(scene: SceneLayout3): Array<PlanRect & { id: s
       const u0 = al.rect.x + 1
       const w = Math.max(2, al.rect.w - 2)
       const r = horizontal
-        ? { x: run.face.origin.x + u0, z: run.plan.z + 7, w, d: RUN_DEPTH - 16 }
+        ? { x: hx(run, u0, w), z: run.plan.z + 7, w, d: RUN_DEPTH - 16 }
         : { x: run.plan.x + 7, z: run.face.origin.z + u0, w: RUN_DEPTH - 16, d: w }
       out.push({ ...r, id: al.placed.id, typeId: al.placed.typeId })
     }
@@ -62,7 +67,7 @@ export function baseAppliancePlans(scene: SceneLayout3): Array<PlanRect & { id: 
       const u0 = al.frame.body.x + 3
       const w = Math.max(2, al.frame.body.w - 6)
       const r = horizontal
-        ? { x: run.face.origin.x + u0, z: run.plan.z + 6, w, d: RUN_DEPTH - 14 }
+        ? { x: hx(run, u0, w), z: run.plan.z + 6, w, d: RUN_DEPTH - 14 }
         : { x: run.plan.x + 6, z: run.face.origin.z + u0, w: RUN_DEPTH - 14, d: w }
       out.push({ ...r, id: al.placed.id, typeId: al.placed.typeId })
     }

@@ -103,6 +103,9 @@ export interface RunScene {
   depth: number
   /** left wing renders with mirrored depth so it recedes outward */
   mirror: boolean
+  /** island bar reverses its u-axis in 3D (appliances face the cook); the plan
+   *  view mirrors to match so both agree on which end a unit sits */
+  reversed?: boolean
   /** near end-cap face (side runs & straight ends), if it faces the viewer */
   endCap?: { face: FaceBasis; frame: Frame | null }
 }
@@ -303,6 +306,7 @@ export function computeScene(design: Design): SceneLayout3 {
       plan: { x: ix0, z: islandZ0, w: Math.max(elev.len, 1), d: RUN_DEPTH },
       depth: islandZ0 + RUN_DEPTH,
       mirror: false,
+      reversed: Boolean(design.islandBar),
     })
     pushTops('island', elev, (u0, u1) => ({
       x: ix0 + u0,
