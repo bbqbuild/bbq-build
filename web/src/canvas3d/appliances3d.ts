@@ -6,6 +6,7 @@ import * as THREE from 'three'
 import type { ApplianceType, PlacedAppliance } from '../types'
 import { COUNTER_T, RUN_DEPTH, frameBodyH } from '../types'
 import { TOP_HEIGHTS } from '../canvas/layout'
+import { applianceWidth } from '../catalog/appliances'
 
 export interface AnimPart {
   /** object whose transform is driven by the open factor */
@@ -60,7 +61,8 @@ export interface Applied {
 export function baseAppliance3d(placed: PlacedAppliance, type: ApplianceType, frameW: number, bodyH: number): Applied {
   const meshes: THREE.Object3D[] = []
   const parts: AnimPart[] = []
-  const openW = frameW - 6
+  // real appliances keep their cutout width and centre in the frame; cabinetry fills it
+  const openW = applianceWidth(type, frameW) - 6
   const openH = bodyH - 12
   const cy = openH / 2 + 6 // cavity vertical center from ground
   const base = type.paintAs ?? type.id
@@ -195,7 +197,8 @@ export function topAppliance3d(placed: PlacedAppliance, type: ApplianceType, fra
   const meshes: THREE.Object3D[] = []
   const parts: AnimPart[] = []
   const base = type.paintAs ?? type.id
-  const w = frameW - (type.mount === 'oncounter' ? 12 : 4)
+  // keep the appliance at its true cutout width; a wider frame is extra counter
+  const w = applianceWidth(type, frameW) - (type.mount === 'oncounter' ? 12 : 4)
   const h = TOP_HEIGHTS[type.id] ?? (type.paintAs ? TOP_HEIGHTS[type.paintAs] : undefined) ?? 20
   const depth = RUN_DEPTH - 14
   const tag = (o: THREE.Object3D) => {

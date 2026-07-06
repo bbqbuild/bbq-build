@@ -38,6 +38,7 @@ function PresetThumb({ design }: { design: Design }) {
       width: W,
       height: H,
       dpr,
+      thumbnail: true,
     })
   }, [design])
   return <canvas ref={ref} className="preset-thumb" />

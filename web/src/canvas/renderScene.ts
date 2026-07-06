@@ -43,6 +43,8 @@ export interface RenderState {
   width: number
   height: number
   dpr: number
+  /** static card render — suppress interactive overlays like the overflow warning */
+  thumbnail?: boolean
 }
 
 const SMOKY_TYPES = /^(grill-|santamaria-|egg-|primo-)/
@@ -86,7 +88,7 @@ export function renderScene(ctx: Ctx, s: RenderState) {
   drawSmoke(ctx, s)
   if (s.showDims) drawGroundDims(ctx, s)
 
-  if (s.scene.overflow) {
+  if (s.scene.overflow && !s.thumbnail) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.font = '600 12px Inter, system-ui, sans-serif'
     ctx.textAlign = 'center'

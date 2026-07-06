@@ -312,7 +312,8 @@ function AppliancesTab() {
     placeAppliance(target.id, t.id)
   }
 
-  const all = [...APPLIANCES, ...(design.custom ?? [])]
+  // custom (AI-imported) items first so a freshly added product tops its group
+  const all = [...(design.custom ?? []), ...APPLIANCES]
   const groups: { title: string; hint: string; items: ApplianceType[] }[] = [
     {
       title: 'Counter level',

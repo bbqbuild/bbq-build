@@ -191,7 +191,8 @@ export const useStore = create<BuilderState>((set, get) => {
     addCustomAppliance: (t) => {
       registerCustomAppliances([t])
       commit((d) => {
-        d.custom = [...(d.custom ?? []).filter((c) => c.id !== t.id), t]
+        // newest first so a freshly imported product tops the catalog list
+        d.custom = [t, ...(d.custom ?? []).filter((c) => c.id !== t.id)]
       })
     },
     setDragging: (dragging) => set({ dragging }),

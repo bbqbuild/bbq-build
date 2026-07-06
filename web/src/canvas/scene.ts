@@ -11,7 +11,7 @@ import {
   groundDepth,
   runsForLayout,
 } from '../types'
-import { getAppliance } from '../catalog/appliances'
+import { applianceWidth, getAppliance } from '../catalog/appliances'
 import { TOP_HEIGHTS } from './layout'
 import { project, type FaceBasis, type PlanPoint } from './projection'
 import type { Rect } from './layout'
@@ -74,12 +74,16 @@ export function computeRunElevation(frames: Frame[], appliances: PlacedAppliance
     const fl = fls.find((f) => f.frame.id === placed.frameId)
     if (!fl) continue
     const type = getAppliance(placed.typeId)
+    // real appliances keep their cutout width centred in the frame; a wider
+    // frame becomes counter margin rather than stretching the unit
+    const aw = applianceWidth(type, fl.body.w)
+    const off = (fl.body.w - aw) / 2
     if (placed.zone === 'base') {
-      als.push({ placed, frame: fl, rect: { ...fl.opening } })
+      als.push({ placed, frame: fl, rect: { x: fl.body.x + off + 3, y: fl.opening.y, w: aw - 6, h: fl.opening.h } })
     } else {
       const h = TOP_HEIGHTS[type.id] ?? (type.paintAs ? TOP_HEIGHTS[type.paintAs] : undefined) ?? 20
       const margin = type.mount === 'oncounter' ? 6 : type.mount === 'kamado' ? 8 : 2
-      als.push({ placed, frame: fl, rect: { x: fl.body.x + margin, y: fl.counterTopY - h, w: fl.body.w - margin * 2, h } })
+      als.push({ placed, frame: fl, rect: { x: fl.body.x + off + margin, y: fl.counterTopY - h, w: aw - margin * 2, h } })
     }
   }
 

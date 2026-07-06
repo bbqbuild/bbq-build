@@ -3,7 +3,7 @@
 // Everything is drawn in centimeters after the caller applies the camera.
 
 import type { CornerId, Design, Frame, RunId, Selection } from '../types'
-import { COUNTER_OVERHANG, RUN_DEPTH, cornerFor, groundDepth } from '../types'
+import { CORNER, COUNTER_OVERHANG, RUN_DEPTH, cornerFor, groundDepth } from '../types'
 import { getAppliance } from '../catalog/appliances'
 import { counterMaterial } from '../catalog/frames'
 import { Ctx, dimLine, dimLineV, fillRoundRect, label, roundRectPath } from './draw'
@@ -70,8 +70,8 @@ export function baseAppliancePlans(scene: SceneLayout3): Array<PlanRect & { id: 
   return out
 }
 
-/** Corner units → their plan region + a symbol anchor (for corner ovens). */
-export function cornerPlans(scene: SceneLayout3): Array<{ id: CornerId; rects: CounterTop[]; ax: number; az: number }> {
+/** Corner units → plan origin (x offset), oven anchor and their raw rects. */
+export function cornerPlans(scene: SceneLayout3): Array<{ id: CornerId; rects: CounterTop[]; x0: number; ax: number; az: number }> {
   const byId = new Map<CornerId, CounterTop[]>()
   for (const t of scene.counterTops) {
     if (!t.corner) continue
@@ -80,10 +80,42 @@ export function cornerPlans(scene: SceneLayout3): Array<{ id: CornerId; rects: C
     byId.set(t.corner, arr)
   }
   return [...byId.entries()].map(([id, rects]) => {
-    // anchor near the front square of the L (the wide, shallow back segment)
-    const back = rects.find((r) => r.w >= r.d) ?? rects[0]
-    return { id, rects, ax: back.x + back.w / 2, az: RUN_DEPTH / 2 }
+    // the corner cabinet spans a CORNER×CORNER footprint from x0
+    const x0 = Math.min(...rects.map((r) => r.x))
+    return { id, rects, x0, ax: x0 + CORNER / 2, az: CORNER / 2 }
   })
+}
+
+/**
+ * Plan-space outline of a corner unit's counter top, matching the 3D geometry:
+ * a pentagon with a 45° cut for 'diagonal', a full square for 'square'.
+ * `grow` expands the outer edges by the counter overhang.
+ */
+export function cornerPoly(side: CornerId, x0: number, style: 'diagonal' | 'square', grow: number): Array<[number, number]> {
+  const CN = CORNER
+  if (style === 'square') {
+    return [
+      [x0 - grow, -grow],
+      [x0 + CN + grow, -grow],
+      [x0 + CN + grow, CN + grow],
+      [x0 - grow, CN + grow],
+    ]
+  }
+  const local: Array<[number, number]> =
+    side === 'left'
+      ? [[0, 0], [CN, 0], [CN, RUN_DEPTH], [RUN_DEPTH, CN], [0, CN]]
+      : [[0, 0], [CN, 0], [CN, CN], [CN - RUN_DEPTH, CN], [0, RUN_DEPTH]]
+  return local.map(([dx, dz]) => [x0 + dx + (dx > CN / 2 ? grow : -grow), dz + (dz > CN / 2 ? grow : -grow)])
+}
+
+function pointInPoly(pts: Array<[number, number]>, x: number, z: number): boolean {
+  let inside = false
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, zi] = pts[i]
+    const [xj, zj] = pts[j]
+    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside
+  }
+  return inside
 }
 
 export function planBounds(scene: SceneLayout3): Rect {
@@ -174,18 +206,19 @@ function drawGround(ctx: Ctx, s: RenderState) {
 
 function drawCounters(ctx: Ctx, s: RenderState) {
   const mat = counterMaterial(s.design.counterMaterial)
+  const straight = s.scene.counterTops.filter((t) => !t.corner) // corners drawn as shaped polys
   // drop shadow for the whole cabinet mass
   ctx.save()
   ctx.shadowColor = 'rgba(0,0,0,0.45)'
   ctx.shadowBlur = 8
   ctx.shadowOffsetY = 4
-  for (const t of s.scene.counterTops) {
+  for (const t of straight) {
     ctx.fillStyle = '#000'
     ctx.fillRect(t.x, t.z, t.w, t.d)
   }
   ctx.restore()
 
-  for (const t of s.scene.counterTops) {
+  for (const t of straight) {
     const g = ctx.createLinearGradient(t.x, t.z, t.x, t.z + t.d)
     g.addColorStop(0, mat.color)
     g.addColorStop(1, mat.edge)
@@ -194,6 +227,35 @@ function drawCounters(ctx: Ctx, s: RenderState) {
     ctx.strokeStyle = 'rgba(255,255,255,0.10)'
     ctx.lineWidth = 0.5
     ctx.strokeRect(t.x + 0.3, t.z + 0.3, t.w - 0.6, t.d - 0.6)
+  }
+
+  // corner units: draw the true diagonal (pentagon) / square footprint
+  const tracePoly = (pts: Array<[number, number]>) => {
+    ctx.beginPath()
+    pts.forEach(([x, z], i) => (i === 0 ? ctx.moveTo(x, z) : ctx.lineTo(x, z)))
+    ctx.closePath()
+  }
+  for (const c of cornerPlans(s.scene)) {
+    const style = cornerFor(s.design, c.id)?.style ?? 'diagonal'
+    const pts = cornerPoly(c.id, c.x0, style, COUNTER_OVERHANG)
+    ctx.save()
+    ctx.shadowColor = 'rgba(0,0,0,0.45)'
+    ctx.shadowBlur = 8
+    ctx.shadowOffsetY = 4
+    ctx.fillStyle = '#000'
+    tracePoly(pts)
+    ctx.fill()
+    ctx.restore()
+    const zs = pts.map((p) => p[1])
+    const g = ctx.createLinearGradient(0, Math.min(...zs), 0, Math.max(...zs))
+    g.addColorStop(0, mat.color)
+    g.addColorStop(1, mat.edge)
+    ctx.fillStyle = g
+    tracePoly(pts)
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)'
+    ctx.lineWidth = 0.5
+    ctx.stroke()
   }
 }
 
@@ -312,7 +374,12 @@ function drawSelection(ctx: Ctx, s: RenderState) {
   } else if (sel.kind === 'corner') {
     for (const c of cornerPlans(s.scene)) {
       if (c.id !== sel.id) continue
-      for (const r of c.rects) ctx.strokeRect(r.x, r.z, r.w, r.d)
+      const style = cornerFor(s.design, c.id)?.style ?? 'diagonal'
+      const pts = cornerPoly(c.id, c.x0, style, COUNTER_OVERHANG)
+      ctx.beginPath()
+      pts.forEach(([x, z], i) => (i === 0 ? ctx.moveTo(x, z) : ctx.lineTo(x, z)))
+      ctx.closePath()
+      ctx.stroke()
     }
   }
 }

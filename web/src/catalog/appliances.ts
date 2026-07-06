@@ -271,6 +271,20 @@ export function fitsFrame(type: ApplianceType, frameWidth: number): boolean {
   return frameWidth >= type.minFrameWidth
 }
 
+// Cabinetry (doors/drawers/bins/wood store) IS the casework and scales with the
+// frame; everything else is a precise appliance with a fixed cutout.
+const CABINETRY = /^(doors|door|drawers|trash|woodstore)/
+
+/**
+ * The width an appliance is actually drawn at inside a frame. Cabinetry fills
+ * the frame; a real appliance keeps its exact cutout width (a wider frame just
+ * adds counter/margin around it — it never stretches the unit).
+ */
+export function applianceWidth(type: ApplianceType, frameWidth: number): number {
+  const base = type.paintAs ?? type.id
+  return CABINETRY.test(base) ? frameWidth : Math.min(frameWidth, type.minFrameWidth)
+}
+
 /** Counter-level ovens that can sit on a corner unit. */
 export const CORNER_OVENS = APPLIANCES.filter((a) => a.mount === 'oncounter')
 

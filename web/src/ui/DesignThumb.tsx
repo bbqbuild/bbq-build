@@ -35,6 +35,7 @@ export function DesignThumb({ design, width = 280, height = 150 }: { design: Des
       width,
       height,
       dpr,
+      thumbnail: true,
     })
   }, [design, width, height])
   return <canvas ref={ref} className="design-thumb" />
