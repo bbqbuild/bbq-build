@@ -1,4 +1,4 @@
-import type { Design, SavedDesign } from '../types'
+import type { ApplianceType, Design, SavedDesign } from '../types'
 import { currentAccessToken, supabase } from './supabase'
 
 /** Cached email of the signed-in user (for display). */
@@ -113,6 +113,25 @@ export async function aiSearchAppliances(query: string): Promise<{ items: AiProd
 
 export async function aiScanUrl(url: string): Promise<{ item: AiProduct }> {
   return request('/api/ai/scan-url', { method: 'POST', body: JSON.stringify({ url }) })
+}
+
+/** The shared catalog of appliances other users have imported (public). */
+export async function getSharedCatalog(): Promise<ApplianceType[]> {
+  try {
+    const { items } = await request<{ items: ApplianceType[] }>('/api/catalog/shared')
+    return items ?? []
+  } catch {
+    return []
+  }
+}
+
+/** Contribute an imported appliance to the shared catalog (best-effort). */
+export async function importAppliance(type: ApplianceType): Promise<void> {
+  try {
+    await request('/api/catalog/import', { method: 'POST', body: JSON.stringify(type) })
+  } catch {
+    /* non-fatal — the item is still added locally */
+  }
 }
 
 export async function aiValidate(design: Design, catalogSummary: string): Promise<ValidationReport> {

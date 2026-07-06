@@ -216,6 +216,49 @@ async function main() {
 
   app.use('/api/ai', aiRouter)
 
+  // ---- shared appliance catalog (user-imported products, visible to everyone) ----
+  app.get('/api/catalog/shared', async (_req, res) => {
+    try {
+      res.json({ items: await storage.listShared() })
+    } catch (err) {
+      console.error('catalog list error:', err.message)
+      res.json({ items: [] })
+    }
+  })
+
+  app.post('/api/catalog/import', requireAuth, async (req, res) => {
+    try {
+      const t = req.body ?? {}
+      if (!t || typeof t.id !== 'string' || typeof t.name !== 'string' || typeof t.minFrameWidth !== 'number') {
+        return res.status(400).json({ error: 'invalid appliance' })
+      }
+      // whitelist the fields we persist so arbitrary data can't ride along
+      const clean = {
+        id: t.id.slice(0, 80),
+        name: String(t.name).slice(0, 120),
+        shortName: String(t.shortName ?? t.name).slice(0, 40),
+        brand: String(t.brand ?? '').slice(0, 60),
+        zone: t.zone === 'base' ? 'base' : 'top',
+        mount: String(t.mount ?? 'dropin').slice(0, 20),
+        minFrameWidth: Math.max(20, Math.min(400, Math.round(t.minFrameWidth))),
+        price: Math.max(0, Math.round(Number(t.price) || 0)),
+        description: String(t.description ?? '').slice(0, 300),
+        icon: String(t.icon ?? '📦').slice(0, 8),
+        custom: true,
+        ...(t.paintAs ? { paintAs: String(t.paintAs).slice(0, 40) } : {}),
+        ...(t.url ? { url: String(t.url).slice(0, 500) } : {}),
+        ...(t.dims && typeof t.dims === 'object'
+          ? { dims: { w: Number(t.dims.w) || 0, h: Number(t.dims.h) || 0, d: Number(t.dims.d) || 0 } }
+          : {}),
+      }
+      const item = await storage.upsertShared(clean.id, clean)
+      res.json({ item })
+    } catch (err) {
+      console.error('catalog import error:', err.message)
+      res.status(500).json({ error: 'could not save' })
+    }
+  })
+
   app.get('/api/health', (_req, res) =>
     res.json({ ok: true, storage: storage.kind, ai: Boolean(process.env.GEMINI_API_KEY) }),
   )

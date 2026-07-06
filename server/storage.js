@@ -20,8 +20,29 @@ async function createStorage() {
         updated_at TIMESTAMP NOT NULL DEFAULT now()
       )
     `)
+    // shared catalog of user-imported appliances — visible to everyone
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS shared_appliances (
+        id SERIAL PRIMARY KEY,
+        key TEXT UNIQUE NOT NULL,
+        data JSONB NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT now()
+      )
+    `)
     return {
       kind: 'postgres',
+      async listShared() {
+        const { rows } = await pool.query('SELECT data FROM shared_appliances ORDER BY created_at DESC LIMIT 500')
+        return rows.map((r) => r.data)
+      },
+      async upsertShared(key, data) {
+        await pool.query(
+          `INSERT INTO shared_appliances (key, data) VALUES ($1, $2)
+           ON CONFLICT (key) DO UPDATE SET data = $2`,
+          [key, JSON.stringify(data)],
+        )
+        return data
+      },
       async list(email) {
         const { rows } = await pool.query(
           'SELECT id, name, data, updated_at FROM designs WHERE user_email = $1 ORDER BY updated_at DESC',
@@ -72,9 +93,30 @@ async function createStorage() {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS shared_appliances (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      key TEXT UNIQUE NOT NULL,
+      data TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `)
   const parse = (row) => row && { ...row, data: JSON.parse(row.data) }
   return {
     kind: 'sqlite',
+    async listShared() {
+      return db
+        .prepare('SELECT data FROM shared_appliances ORDER BY created_at DESC LIMIT 500')
+        .all()
+        .map((r) => JSON.parse(r.data))
+    },
+    async upsertShared(key, data) {
+      db.prepare(
+        `INSERT INTO shared_appliances (key, data) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET data = excluded.data`,
+      ).run(key, JSON.stringify(data))
+      return data
+    },
     async list(email) {
       return db
         .prepare('SELECT id, name, data, updated_at FROM designs WHERE user_email = ? ORDER BY updated_at DESC')

@@ -273,9 +273,11 @@ async function scanUrl(url) {
               `Extract the outdoor-kitchen appliance from this product page as JSON. ` +
               `Category must be one of: ${CATEGORIES.join(', ')}. ` +
               `(santamaria = open argentine/gaucho grills, kamado = ceramic eggs/smokers, icebin = drop-in ice bins.) ` +
-              `width_cm is the unit's width in centimeters (convert from inches if needed; cut-out width if given, else overall). ` +
-              `price_usd is the listed price. blurb is ONE short sentence. ` +
-              `If it's not an outdoor kitchen appliance, set category to "".${sourceNote}\n\nTITLE: ${title}\nURL: ${url}\n\n${text}`,
+              `Give ALL dimensions in centimeters (convert from inches; 1 in = 2.54 cm). Prefer the CUT-OUT ` +
+              `(installation opening) dimensions when listed — cutout_width_cm, cutout_height_cm, cutout_depth_cm — ` +
+              `otherwise the overall dimensions. width_cm = cutout_width_cm. price_usd is the listed price. ` +
+              `blurb is ONE short sentence. If it's not an outdoor kitchen appliance, set category to "".` +
+              `${sourceNote}\n\nTITLE: ${title}\nURL: ${url}\n\n${text}`,
           },
         ],
       },
@@ -287,6 +289,9 @@ async function scanUrl(url) {
         model: { type: 'string' },
         category: { type: 'string' },
         width_cm: { type: 'number' },
+        cutout_width_cm: { type: 'number' },
+        cutout_height_cm: { type: 'number' },
+        cutout_depth_cm: { type: 'number' },
         price_usd: { type: 'number' },
         blurb: { type: 'string' },
       },
@@ -299,6 +304,10 @@ async function scanUrl(url) {
   if (!item.category || !CATEGORIES.includes(item.category)) {
     throw Object.assign(new Error("That page doesn't look like an outdoor-kitchen appliance we can place."), { status: 422 })
   }
+  // fold cutout dims into the item (width_cm stays the primary sizing width)
+  if (item.cutout_width_cm > 0) item.width_cm = item.cutout_width_cm
+  item.height_cm = item.cutout_height_cm || item.height_cm || 0
+  item.depth_cm = item.cutout_depth_cm || item.depth_cm || 0
   item.url = url
   return { item }
 }
@@ -306,7 +315,9 @@ async function scanUrl(url) {
 // ---------- build validation ----------
 
 async function validateBuild(design, catalogSummary) {
-  const { text } = await callGemini({
+  // Pass 1: grounded expert review as free text. (Gemini can't combine a
+  // response schema with the google_search tool, so we structure in pass 2.)
+  const review = await callGemini({
     systemInstruction:
       'You are a master outdoor-kitchen designer and installer reviewing a build spec. ' +
       'Judge real-world feasibility: clearances around heat appliances, ventilation of gas units in enclosed islands, ' +
@@ -319,17 +330,48 @@ async function validateBuild(design, catalogSummary) {
         parts: [
           {
             text:
-              `Review this outdoor kitchen design and report issues.\n\nDESIGN (units cm):\n${JSON.stringify(design, null, 1)}\n\n` +
-              `CATALOG REFERENCE:\n${catalogSummary}\n\n` +
-              `Respond ONLY with JSON: {"feasible": boolean, "score": number (0-100 build-quality), ` +
-              `"summary": string (2 sentences), "issues": [{"severity": "error"|"warning"|"info", "message": string}], ` +
-              `"suggestions": [string]}. Max 6 issues, max 4 suggestions.`,
+              `Review this outdoor kitchen design. Give an overall feasibility verdict, a 0-100 build-quality score, ` +
+              `a two-sentence summary, up to 6 concrete issues (each tagged error/warning/info), and up to 4 suggestions.\n\n` +
+              `DESIGN (units cm):\n${JSON.stringify(design, null, 1)}\n\nCATALOG REFERENCE:\n${catalogSummary}`,
           },
         ],
       },
     ],
     tools: [{ google_search: {} }],
     temperature: 0.3,
+    maxOutputTokens: 2048,
+  })
+
+  // Pass 2: structure the review into strict JSON (schema → always valid).
+  const { text } = await callGemini({
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: `Convert this outdoor-kitchen build review into JSON.\n\n${review.text}` }],
+      },
+    ],
+    responseSchema: {
+      type: 'object',
+      properties: {
+        feasible: { type: 'boolean' },
+        score: { type: 'number' },
+        summary: { type: 'string' },
+        issues: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              severity: { type: 'string', enum: ['error', 'warning', 'info'] },
+              message: { type: 'string' },
+            },
+            required: ['severity', 'message'],
+          },
+        },
+        suggestions: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['feasible', 'score', 'summary', 'issues', 'suggestions'],
+    },
+    temperature: 0.1,
     maxOutputTokens: 2048,
   })
   return parseJson(text)

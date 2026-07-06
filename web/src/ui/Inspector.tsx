@@ -506,7 +506,11 @@ function AppliancePanel({ placedId }: { placedId: string }) {
       : frame
         ? frameBodyH(frame)
         : undefined
-  const size = `${formatLen(w, unit)} W × ${formatLen(RUN_DEPTH, unit)} D${h ? ` × ${formatLen(h, unit)} H` : ''}`
+  // imported products carry their real cutout dims; otherwise derive from the frame
+  const size = type.dims
+    ? `${formatLen(type.dims.w, unit)} W × ${formatLen(type.dims.d, unit)} D × ${formatLen(type.dims.h, unit)} H`
+    : `${formatLen(w, unit)} W × ${formatLen(RUN_DEPTH, unit)} D${h ? ` × ${formatLen(h, unit)} H` : ''}`
+  const sizeLabel = type.dims ? 'Cutout' : 'Size'
 
   return (
     <div className="panel">
@@ -530,7 +534,7 @@ function AppliancePanel({ placedId }: { placedId: string }) {
           </dd>
         </div>
         <div>
-          <dt>Size</dt>
+          <dt>{sizeLabel}</dt>
           <dd>{size}</dd>
         </div>
         <div>

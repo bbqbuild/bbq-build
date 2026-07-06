@@ -7,6 +7,9 @@ export interface AiProduct {
   model: string
   category: string
   width_cm: number
+  /** cutout height / depth in cm, when the source listed them */
+  height_cm?: number
+  depth_cm?: number
   price_usd: number
   url?: string
   blurb: string
@@ -61,6 +64,10 @@ export function toApplianceType(p: AiProduct): ApplianceType | string {
   const spec = CATEGORY_MAP[p.category]
   if (!spec) return `Unsupported category "${p.category}"`
   const minFrameWidth = neededWidth(p.width_cm)
+  const dims =
+    p.height_cm || p.depth_cm
+      ? { w: Math.round(p.width_cm), h: Math.round(p.height_cm ?? 0), d: Math.round(p.depth_cm ?? 0) }
+      : undefined
   return {
     id: `ai-${slug(`${p.brand}-${p.model}`)}`,
     name: `${p.brand} ${p.model}`,
@@ -75,5 +82,6 @@ export function toApplianceType(p: AiProduct): ApplianceType | string {
     custom: true,
     paintAs: spec.paintAs,
     url: p.url,
+    ...(dims ? { dims } : {}),
   }
 }

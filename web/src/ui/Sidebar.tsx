@@ -3,7 +3,7 @@ import { APPLIANCES, fitsFrame } from '../catalog/appliances'
 import { toApplianceType, type AiProduct } from '../catalog/aiProducts'
 import { checkPlacement } from '../catalog/compat'
 import { FINISHES, FRAME_SPECS, GROUND_TYPES } from '../catalog/frames'
-import { aiSearchAppliances, aiScanUrl } from '../auth/api'
+import { aiSearchAppliances, aiScanUrl, importAppliance } from '../auth/api'
 import { groundDepth, runsForLayout, type RunId } from '../types'
 import { formatPrice, useStore } from '../state/store'
 import { formatLen } from '../units'
@@ -271,6 +271,7 @@ function AppliancesTab() {
   const selection = useStore((s) => s.selection)
   const design = useStore((s) => s.design)
   const placeAppliance = useStore((s) => s.placeAppliance)
+  const sharedCatalog = useStore((s) => s.sharedCatalog)
   const unit = useStore((s) => s.unit)
   const push = useToasts((s) => s.push)
 
@@ -312,8 +313,11 @@ function AppliancesTab() {
     placeAppliance(target.id, t.id)
   }
 
-  // custom (AI-imported) items first so a freshly added product tops its group
-  const all = [...(design.custom ?? []), ...APPLIANCES]
+  // imported items first (this design's + everyone's shared catalog, deduped),
+  // so a freshly added product tops its group
+  const importedById = new Map<string, ApplianceType>()
+  for (const a of [...(design.custom ?? []), ...sharedCatalog]) if (!importedById.has(a.id)) importedById.set(a.id, a)
+  const all = [...importedById.values(), ...APPLIANCES]
   const groups: { title: string; hint: string; items: ApplianceType[] }[] = [
     {
       title: 'Counter level',
@@ -432,6 +436,10 @@ function AiProductSearch() {
     }
     addCustomAppliance(t)
     push(`${t.name} added to your catalog`, 'success')
+    // contribute to the shared catalog so everyone can use it, and show it now
+    const { sharedCatalog, setSharedCatalog: setShared } = useStore.getState()
+    if (!sharedCatalog.some((a) => a.id === t.id)) setShared([t, ...sharedCatalog])
+    importAppliance(t)
   }
 
   return (

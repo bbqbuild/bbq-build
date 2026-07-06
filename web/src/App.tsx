@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { clearSession, createDesign, setCachedEmail, updateDesign } from './auth/api'
+import { clearSession, createDesign, getSharedCatalog, setCachedEmail, updateDesign } from './auth/api'
 import { supabase } from './auth/supabase'
 import { Login } from './auth/Login'
 import { CanvasStage, fitView } from './canvas/CanvasStage'
@@ -101,6 +101,13 @@ export default function App() {
     const onLogout = () => setAuthed(false)
     window.addEventListener('bbq:logout', onLogout)
     return () => window.removeEventListener('bbq:logout', onLogout)
+  }, [])
+
+  // load the shared catalog of user-imported appliances (available to everyone)
+  useEffect(() => {
+    getSharedCatalog().then((list) => {
+      if (list.length) useStore.getState().setSharedCatalog(list)
+    })
   }, [])
 
   const save = useCallback(

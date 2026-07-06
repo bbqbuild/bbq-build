@@ -134,6 +134,8 @@ export interface ApplianceType {
   paintAs?: string
   /** Product page for custom items. */
   url?: string
+  /** Real cutout dimensions in cm (imported products): width, height, depth. */
+  dims?: { w: number; h: number; d: number }
 }
 
 export interface Preset {

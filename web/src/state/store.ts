@@ -63,6 +63,10 @@ interface BuilderState {
   measuring: boolean
   openMode: boolean
 
+  /** shared catalog of appliances imported by any user (fetched once on load) */
+  sharedCatalog: ApplianceType[]
+  setSharedCatalog: (list: ApplianceType[]) => void
+
   select: (s: Selection) => void
   toggleChat: () => void
   toggleView: () => void
@@ -153,6 +157,7 @@ export const useStore = create<BuilderState>((set, get) => {
     selection: { kind: 'none' },
     savedId: null,
     pendingDrop: null,
+    sharedCatalog: [],
     dirty: false,
     history: [],
     future: [],
@@ -165,6 +170,11 @@ export const useStore = create<BuilderState>((set, get) => {
     viewMode: (localStorage.getItem('bbq_view') as '3d' | '2d') || '3d',
     measuring: false,
     openMode: false,
+
+    setSharedCatalog: (list) => {
+      registerCustomAppliances(list)
+      set({ sharedCatalog: list })
+    },
 
     select: (selection) => {
       resetCoalesce()
