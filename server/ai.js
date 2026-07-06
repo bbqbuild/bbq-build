@@ -10,10 +10,10 @@ function apiKey() {
   return key
 }
 
-async function callGemini({ contents, systemInstruction, tools, responseSchema, temperature = 0.4 }) {
+async function callGemini({ contents, systemInstruction, tools, responseSchema, temperature = 0.4, maxOutputTokens = 2048 }) {
   const body = {
     contents,
-    generationConfig: { temperature },
+    generationConfig: { temperature, maxOutputTokens },
   }
   if (systemInstruction) body.systemInstruction = { parts: [{ text: systemInstruction }] }
   if (tools) body.tools = tools
@@ -39,10 +39,28 @@ async function callGemini({ contents, systemInstruction, tools, responseSchema, 
   return { text, grounded: Boolean(cand?.groundingMetadata) }
 }
 
-/** Lenient JSON extraction — models occasionally wrap JSON in fences. */
+/** Lenient JSON extraction — models occasionally wrap JSON in fences or truncate. */
 function parseJson(text) {
   const trimmed = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')
-  return JSON.parse(trimmed)
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    // salvage a truncated response: at each '}' from the end, try closing the
+    // operations array + root object (or just the root) and parse.
+    for (let i = trimmed.length - 1; i > 0; i--) {
+      if (trimmed[i] !== '}') continue
+      const prefix = trimmed.slice(0, i + 1)
+      for (const suffix of [']}', '}', ']}}']) {
+        try {
+          return JSON.parse(prefix + suffix)
+        } catch {
+          /* try next */
+        }
+      }
+    }
+    console.error('parseJson failed. len=', trimmed.length, 'tail=', JSON.stringify(trimmed.slice(-120)))
+    throw new Error('Gemini returned malformed JSON')
+  }
 }
 
 // ---------- real product search ----------
@@ -132,6 +150,7 @@ async function searchAppliances(query) {
       required: ['items'],
     },
     temperature: 0.1,
+    maxOutputTokens: 4096,
   })
 
   const { items } = parseJson(structured.text)
@@ -169,6 +188,7 @@ async function validateBuild(design, catalogSummary) {
     ],
     tools: [{ google_search: {} }],
     temperature: 0.3,
+    maxOutputTokens: 2048,
   })
   return parseJson(text)
 }
@@ -187,6 +207,7 @@ const CHAT_SCHEMA = {
           op: {
             type: 'string',
             enum: [
+              'add_run',
               'add_frame',
               'remove_frame',
               'place_appliance',
@@ -205,7 +226,21 @@ const CHAT_SCHEMA = {
           lowered: { type: 'boolean' },
           layout: { type: 'string', enum: ['straight', 'l-left', 'l-right', 'u'] },
           island: { type: 'boolean' },
-          run: { type: 'string', enum: ['back', 'left', 'right', 'island'], description: 'add_frame/move_frame target run' },
+          run: { type: 'string', enum: ['back', 'left', 'right', 'island'], description: 'add_frame/add_run/move_frame target run' },
+          units: {
+            type: 'array',
+            description: 'add_run: the frames to build in this run, left to right',
+            items: {
+              type: 'object',
+              properties: {
+                width: { type: 'number', description: '40|60|80|90' },
+                lowered: { type: 'boolean', description: 'smoker table for a kamado' },
+                top: { type: 'string', description: 'counter-level appliance typeId (optional)' },
+                base: { type: 'string', description: 'under-counter appliance typeId (optional)' },
+              },
+              required: ['width'],
+            },
+          },
           index: { type: 'number', description: 'insertion index for add_frame / target for move_frame' },
           frameIndex: { type: 'number', description: '0-based index into design.frames' },
           toIndex: { type: 'number' },
@@ -241,43 +276,43 @@ async function chat(messages, design, catalogSummary) {
   })
   const { text } = await callGemini({
     systemInstruction:
-      'You are the bbq.build design assistant. You edit an outdoor-kitchen design by emitting operations; the app applies them. ' +
-      'Frames are modules (40/60/80/90 cm wide); each has a top slot (counter level) and a base slot (under counter). ' +
-      'The kitchen has a shape (design.layout): straight, l-left, l-right (an extra perpendicular wing joined by a corner), or u (two wings). ' +
-      'design.island adds a freestanding island row in front. Frames live in a run: back (default), left, right, or island (frame.run field). ' +
-      'Use set_layout {layout} / set_island {island} to change shape, and add_frame {width, run} to build wings. ' +
-      'A run only shows if the layout includes it — set the layout BEFORE adding frames to a wing. frameIndex always indexes the FLAT design.frames array. ' +
-      'CRITICAL for shaped kitchens: EVERY add_frame that belongs to a wing MUST include run:"left"/"right", and island frames MUST include run:"island". ' +
-      'A frame with no run goes to the back counter. So for an L with an island, some frames carry run:"left" (or "right") and others run:"island" — never leave them all on the back. ' +
-      'Example — L-right with a grill on the back and a 2-seat island:\n' +
-      '{"reply":"An L-shaped kitchen with a grill and a bar island.","operations":[' +
-      '{"op":"set_layout","layout":"l-right"},{"op":"set_island","island":true},' +
-      '{"op":"add_frame","width":90},{"op":"place_appliance","frameIndex":0,"typeId":"grill-90"},' +
-      '{"op":"add_frame","width":60,"run":"right"},{"op":"place_appliance","frameIndex":1,"typeId":"fridge-60"},' +
-      '{"op":"add_frame","width":90,"run":"island"},{"op":"add_frame","width":60,"run":"island"}]}\n' +
-      'Islands are where bar seating goes — add island frames when the user wants seats/stools. ' +
-      'Kamado smokers (egg-xl, primo-xl) need a frame with lowered=true (smoker table). ' +
-      'Placement rules the app enforces: appliance minFrameWidth must fit the frame; no refrigeration (fridge-60, kegerator-60, icemaker-60) ' +
-      'directly under heat (grill-90, grill-80, santamaria-90, griddle-60, burner-40); no woodstore-40 under heat; sink-40 requires doors/trash base; ' +
-      'lowered frames take only kamados on top and woodstore-40/drawers-40 in the base. ' +
-      `APPLIANCE CATALOG:\n${catalogSummary}\n` +
-      'frameIndex is 0-based in current design.frames order. When the user asks for something that needs a wider frame than exists, ' +
-      'add a suitable frame first, then place into it (operations run in order; a frame added at the end has index = previous length). ' +
-      'CRITICAL: every operation object must be complete and self-contained — place_appliance always carries BOTH frameIndex AND typeId ' +
-      'in the same object; add_frame always carries width. Never split one action across two objects. ' +
-      'Example — user says "grill island with a fridge" on an empty design:\n' +
-      '{"reply":"Done — a 90 cm grill with doors below and a fridge beside it.","operations":[' +
-      '{"op":"add_frame","width":90},' +
-      '{"op":"place_appliance","frameIndex":0,"typeId":"grill-90"},' +
-      '{"op":"place_appliance","frameIndex":0,"typeId":"doors-60"},' +
-      '{"op":"add_frame","width":60},' +
-      '{"op":"place_appliance","frameIndex":1,"typeId":"fridge-60"}]}\n' +
-      'Be concise and friendly; never invent typeIds outside the catalog.',
+      'You are the bbq.build design assistant. You edit an outdoor-kitchen design by emitting a SHORT list of operations (usually 3-12; never repeat operations). ' +
+      'Frames are modules (40/60/80/90 cm); each has a top slot (counter level) and a base slot (under counter). frameIndex is 0-based in the FLAT design.frames array. ' +
+      'Shape = design.layout: straight | l-left | l-right | u. design.island toggles a front island row. Each frame has a run: back (default), left, right, or island. ' +
+      'Rules: (1) set_layout / set_island BEFORE adding wing/island frames. (2) Every add_frame for a wing MUST carry run:"left"/"right"; island frames MUST carry run:"island"; back frames omit run. Never leave wing/island frames on the back. ' +
+      '(3) Each operation object is complete: place_appliance carries BOTH frameIndex AND typeId; add_frame carries width (+run for wings). ' +
+      '(4) A frame added at the end of its run gets frameIndex = current design.frames length. (5) Islands hold bar seating — add island frames when the user wants seats. ' +
+      '(6) Kamados (egg-xl, primo-xl) need lowered:true frames. (7) No refrigeration under heat; sink-40 needs a doors/trash base; respect minFrameWidth. ' +
+      'PREFER add_run to build a whole run at once: {op:"add_run", run, units:[{width, top?, base?, lowered?}]}. This is the reliable way to fill wings and islands. ' +
+      'Example (empty design → "L kitchen with a grill and a 2-seat island"): operations = ' +
+      '[{op:set_layout,layout:l-right},{op:set_island,island:true},' +
+      '{op:add_run,run:back,units:[{width:90,top:santamaria-90,base:doors-60},{width:60,top:sink-40,base:doors-60}]},' +
+      '{op:add_run,run:right,units:[{width:60,base:fridge-60}]},' +
+      '{op:add_run,run:island,units:[{width:90},{width:60}]}]. ' +
+      `APPLIANCE CATALOG (use these typeIds only):\n${catalogSummary}\n` +
+      'Return a short friendly "reply" plus the operations. Do NOT invent typeIds.',
     contents,
     responseSchema: CHAT_SCHEMA,
-    temperature: 0.5,
+    temperature: 0.35,
+    maxOutputTokens: 3072,
   })
-  return parseJson(text)
+  const result = parseJson(text)
+  // safety net: drop runaway repeated add_frame loops the model sometimes emits
+  if (Array.isArray(result.operations)) {
+    const cleaned = []
+    let repeat = 0
+    let prev = ''
+    for (const op of result.operations) {
+      const sig = JSON.stringify(op)
+      repeat = sig === prev ? repeat + 1 : 0
+      prev = sig
+      if (op.op === 'add_frame' && repeat >= 2) continue // 3rd+ identical add_frame → skip
+      cleaned.push(op)
+      if (cleaned.length >= 18) break
+    }
+    result.operations = cleaned
+  }
+  return result
 }
 
 module.exports = { searchAppliances, validateBuild, chat }

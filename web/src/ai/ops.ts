@@ -22,6 +22,39 @@ export function applyOperations(ops: ChatOperation[]): OpResult[] {
   for (const o of ops) {
     try {
       switch (o.op) {
+        case 'add_run': {
+          const run = (o.run as RunId) || 'back'
+          const units = Array.isArray(o.units) ? (o.units as Record<string, unknown>[]) : []
+          const d = s().design
+          if (run !== 'back' && run !== 'island' && !runsForLayout(d.layout).includes(run)) {
+            results.push({ ok: false, text: `The ${run} wing isn't part of the current layout` })
+            break
+          }
+          if (run === 'island' && !s().design.island) s().setIsland(true)
+          let placed = 0
+          for (const u of units) {
+            const width = Number(u.width) as FrameWidth
+            if (!FRAME_WIDTHS.includes(width)) continue
+            const id = s().addFrame(width, undefined, Boolean(u.lowered), run)
+            for (const zoneKey of ['top', 'base'] as const) {
+              const typeId = u[zoneKey]
+              if (typeof typeId !== 'string') continue
+              let type
+              try {
+                type = getAppliance(typeId)
+              } catch {
+                continue
+              }
+              const frame = s().design.frames.find((f) => f.id === id)
+              if (frame && checkPlacement(s().design, frame, type).ok) {
+                s().placeAppliance(id, typeId)
+                placed++
+              }
+            }
+          }
+          results.push({ ok: true, text: `Built ${units.length} ${run} unit${units.length === 1 ? '' : 's'}${placed ? ` with ${placed} appliance${placed === 1 ? '' : 's'}` : ''}` })
+          break
+        }
         case 'add_frame': {
           const width = Number(o.width) as FrameWidth
           if (!FRAME_WIDTHS.includes(width)) {
