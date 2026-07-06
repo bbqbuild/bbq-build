@@ -11,11 +11,12 @@ interface Props {
   onOpenDesigns: () => void
   onOpenValidate: () => void
   onNew: () => void
+  onHome: () => void
   onLogout: () => void
   saving: boolean
 }
 
-export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onOpenValidate, onNew, onLogout, saving }: Props) {
+export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onOpenValidate, onNew, onHome, onLogout, saving }: Props) {
   const design = useStore((s) => s.design)
   const dirty = useStore((s) => s.dirty)
   const setName = useStore((s) => s.setName)
@@ -51,12 +52,12 @@ export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onOpe
   return (
     <header className="topbar">
       <div className="topbar-left">
-        <div className="logo" title="bbq.build">
+        <button className="logo logo-btn" title="Back to your designs" onClick={onHome}>
           <img src="/flame.svg" alt="" width={22} height={22} />
           <span>
             bbq<em>.build</em>
           </span>
-        </div>
+        </button>
         <input
           className="design-name"
           value={nameDraft ?? design.name}
@@ -144,9 +145,9 @@ export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onOpe
         <button className="btn btn-ghost" onClick={onOpenSpec} title="Bill of materials">
           Spec · <strong>{formatPrice(total)}</strong>
         </button>
-        <button className="btn btn-primary" onClick={onSave} disabled={saving} title="Save (Ctrl+S)">
-          {saving ? 'Saving…' : dirty ? 'Save' : 'Saved ✓'}
-        </button>
+        <span className="save-status" title="Your work saves automatically">
+          {saving ? 'Saving…' : dirty ? 'Editing…' : 'Saved ✓'}
+        </span>
         <div className="user-menu">
           <button className="btn btn-icon avatar" onClick={() => setMenuOpen((o) => !o)} title={getEmail() ?? ''}>
             {(getEmail() ?? 'S')[0].toUpperCase()}

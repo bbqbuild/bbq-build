@@ -33,7 +33,7 @@ export function SizeRow({
         <span>{label}</span>
         <span className="size-input-wrap">
           <input
-            className="size-input"
+            className={`size-input ${unit === 'cm' ? '' : 'size-input-wide'}`}
             value={display}
             onChange={(e) => setText(e.target.value)}
             onFocus={() => setText(lenInputValue(cm, unit))}
@@ -43,8 +43,9 @@ export function SizeRow({
             }}
             onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
             spellCheck={false}
+            title={unit === 'cm' ? 'centimetres' : "type feet & inches, e.g. 5'11 or 11'"}
           />
-          <span className="size-unit">{unit === 'cm' ? 'cm' : 'in'}</span>
+          {unit === 'cm' && <span className="size-unit">cm</span>}
         </span>
       </div>
       <input

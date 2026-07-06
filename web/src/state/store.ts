@@ -14,7 +14,7 @@ export function newId(prefix: string): string {
 export function emptyDesign(): Design {
   return {
     name: 'Untitled kitchen',
-    ground: { type: 'deck', width: 420, depth: 320 },
+    ground: { type: 'concrete', width: 420, depth: 320 },
     layout: 'straight',
     island: false,
     frames: [],
@@ -114,7 +114,7 @@ export const useStore = create<BuilderState>((set, get) => {
     hoveredFrameId: null,
     showDims: true,
     showGrid: false,
-    unit: (localStorage.getItem('bbq_unit') as Unit) || 'cm',
+    unit: (localStorage.getItem('bbq_unit') as Unit) || 'imperial',
     chatOpen: localStorage.getItem('bbq_chat') === 'open',
     viewMode: (localStorage.getItem('bbq_view') as '3d' | '2d') || '3d',
     measuring: false,
