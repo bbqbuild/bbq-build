@@ -247,6 +247,15 @@ async function chat(messages, design, catalogSummary) {
       'design.island adds a freestanding island row in front. Frames live in a run: back (default), left, right, or island (frame.run field). ' +
       'Use set_layout {layout} / set_island {island} to change shape, and add_frame {width, run} to build wings. ' +
       'A run only shows if the layout includes it — set the layout BEFORE adding frames to a wing. frameIndex always indexes the FLAT design.frames array. ' +
+      'CRITICAL for shaped kitchens: EVERY add_frame that belongs to a wing MUST include run:"left"/"right", and island frames MUST include run:"island". ' +
+      'A frame with no run goes to the back counter. So for an L with an island, some frames carry run:"left" (or "right") and others run:"island" — never leave them all on the back. ' +
+      'Example — L-right with a grill on the back and a 2-seat island:\n' +
+      '{"reply":"An L-shaped kitchen with a grill and a bar island.","operations":[' +
+      '{"op":"set_layout","layout":"l-right"},{"op":"set_island","island":true},' +
+      '{"op":"add_frame","width":90},{"op":"place_appliance","frameIndex":0,"typeId":"grill-90"},' +
+      '{"op":"add_frame","width":60,"run":"right"},{"op":"place_appliance","frameIndex":1,"typeId":"fridge-60"},' +
+      '{"op":"add_frame","width":90,"run":"island"},{"op":"add_frame","width":60,"run":"island"}]}\n' +
+      'Islands are where bar seating goes — add island frames when the user wants seats/stools. ' +
       'Kamado smokers (egg-xl, primo-xl) need a frame with lowered=true (smoker table). ' +
       'Placement rules the app enforces: appliance minFrameWidth must fit the frame; no refrigeration (fridge-60, kegerator-60, icemaker-60) ' +
       'directly under heat (grill-90, grill-80, santamaria-90, griddle-60, burner-40); no woodstore-40 under heat; sink-40 requires doors/trash base; ' +

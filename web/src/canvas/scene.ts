@@ -6,6 +6,7 @@ import {
   GROUND_T,
   ISLAND_AISLE,
   RUN_DEPTH,
+  cornerFor,
   frameBodyH,
   groundDepth,
   runsForLayout,
@@ -195,15 +196,17 @@ export function computeScene(design: Design): SceneLayout3 {
 
   pushTops('back', backElev, (u0, u1) => ({ x: backStart + u0, z: 0, w: u1 - u0, d: RUN_DEPTH + COUNTER_OVERHANG }))
 
-  // corner tops (standard height), merged visually with back counter
+  // corner tops — honor per-corner config (removal + lowered height)
   let cornerCount = 0
-  if (hasL) {
+  const leftCorner = cornerFor(design, 'left')
+  const rightCorner = cornerFor(design, 'right')
+  if (hasL && leftCorner) {
     cornerCount++
-    counterTops.push({ runId: 'back', x: x0, z: 0, w: CORNER, d: RUN_DEPTH + COUNTER_OVERHANG, y: 88, mirror: true })
+    counterTops.push({ runId: 'back', x: x0, z: 0, w: CORNER, d: RUN_DEPTH + COUNTER_OVERHANG, y: leftCorner.lowered ? 64 : 88, mirror: true })
   }
-  if (hasR) {
+  if (hasR && rightCorner) {
     cornerCount++
-    counterTops.push({ runId: 'back', x: x1 - CORNER, z: 0, w: CORNER, d: RUN_DEPTH + COUNTER_OVERHANG, y: 88 })
+    counterTops.push({ runId: 'back', x: x1 - CORNER, z: 0, w: CORNER, d: RUN_DEPTH + COUNTER_OVERHANG, y: rightCorner.lowered ? 64 : 88 })
   }
 
   if (hasL) {

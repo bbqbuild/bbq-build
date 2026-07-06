@@ -122,11 +122,11 @@ export default function App() {
         }}
       />
       <div className="workspace">
-        <ChatPanel />
         <Sidebar />
         {viewMode === '3d' ? <Stage3D /> : <CanvasStage />}
         <Inspector />
       </div>
+      <ChatPanel />
       {modal === 'presets' && <PresetsModal onClose={() => setModal('none')} />}
       {modal === 'spec' && <SpecModal onClose={() => setModal('none')} />}
       {modal === 'designs' && <DesignsModal onClose={() => setModal('none')} />}

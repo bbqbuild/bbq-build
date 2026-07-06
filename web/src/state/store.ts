@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import type { Design, FrameFinish, FrameWidth, GroundType, LayoutShape, PlacedAppliance, RunId, Selection, Zone } from '../types'
-import { runsForLayout } from '../types'
+import type { CornerId, Design, FrameFinish, FrameWidth, GroundType, LayoutShape, PlacedAppliance, RunId, Selection, Zone } from '../types'
+import { cornerFor, runsForLayout } from '../types'
 import { getAppliance, fitsFrame, registerCustomAppliances } from '../catalog/appliances'
 import { checkPlacement } from '../catalog/compat'
 import type { ApplianceType } from '../types'
@@ -46,11 +46,14 @@ interface BuilderState {
   chatOpen: boolean
   viewMode: '3d' | '2d'
   measuring: boolean
+  openMode: boolean
 
   select: (s: Selection) => void
   toggleChat: () => void
   toggleView: () => void
   toggleMeasure: () => void
+  toggleOpen: () => void
+  flipAppliance: (id: string) => void
   addCustomAppliance: (t: ApplianceType) => void
   setDragging: (d: DragPayload | null) => void
   setHoveredFrame: (id: string | null) => void
@@ -68,6 +71,11 @@ interface BuilderState {
   moveFrame: (id: string, toIndex: number, run?: RunId) => void
   setFrameFinish: (id: string, finish: FrameFinish) => void
   setFrameLowered: (id: string, lowered: boolean) => boolean
+  setFrameWidth: (id: string, width: number) => void
+  setFrameHeight: (id: string, height: number) => void
+  setCornerFinish: (side: CornerId, finish: FrameFinish) => void
+  setCornerLowered: (side: CornerId, lowered: boolean) => void
+  setCorner: (side: CornerId, present: boolean) => void
   setAllFinishes: (finish: FrameFinish) => void
   placeAppliance: (frameId: string, typeId: string) => boolean
   removeAppliance: (id: string) => void
@@ -107,9 +115,10 @@ export const useStore = create<BuilderState>((set, get) => {
     showDims: true,
     showGrid: false,
     unit: (localStorage.getItem('bbq_unit') as Unit) || 'cm',
-    chatOpen: localStorage.getItem('bbq_chat') !== 'closed',
+    chatOpen: localStorage.getItem('bbq_chat') === 'open',
     viewMode: (localStorage.getItem('bbq_view') as '3d' | '2d') || '3d',
     measuring: false,
+    openMode: false,
 
     select: (selection) => set({ selection }),
     toggleView: () =>
@@ -119,6 +128,12 @@ export const useStore = create<BuilderState>((set, get) => {
         return { viewMode, measuring: false }
       }),
     toggleMeasure: () => set((s) => ({ measuring: !s.measuring })),
+    toggleOpen: () => set((s) => ({ openMode: !s.openMode })),
+    flipAppliance: (id) =>
+      commit((d) => {
+        const a = d.appliances.find((a) => a.id === id)
+        if (a) a.flipped = !a.flipped
+      }),
     toggleChat: () =>
       set((s) => {
         localStorage.setItem('bbq_chat', s.chatOpen ? 'closed' : 'open')
@@ -189,6 +204,39 @@ export const useStore = create<BuilderState>((set, get) => {
       })
       set({ selection: { kind: 'frame', id } })
       return id
+    },
+
+    setFrameWidth: (id, width) =>
+      commit((d) => {
+        const f = d.frames.find((f) => f.id === id)
+        if (f) f.width = Math.max(20, Math.min(200, Math.round(width)))
+      }),
+
+    setFrameHeight: (id, height) =>
+      commit((d) => {
+        const f = d.frames.find((f) => f.id === id)
+        if (f) f.height = Math.max(45, Math.min(140, Math.round(height)))
+      }),
+
+    setCornerFinish: (side, finish) =>
+      commit((d) => {
+        d.corners = d.corners ?? {}
+        d.corners[side] = { ...(d.corners[side] ?? { finish }), finish }
+      }),
+
+    setCornerLowered: (side, lowered) =>
+      commit((d) => {
+        d.corners = d.corners ?? {}
+        const cur = d.corners[side] ?? { finish: d.frames[0]?.finish ?? 'graphite' }
+        d.corners[side] = { ...cur, lowered }
+      }),
+
+    setCorner: (side, present) => {
+      commit((d) => {
+        d.corners = d.corners ?? {}
+        d.corners[side] = present ? { finish: d.frames[0]?.finish ?? 'graphite' } : null
+      })
+      set({ selection: present ? { kind: 'corner', id: side } : { kind: 'none' } })
     },
 
     setFrameLowered: (id, lowered) => {
@@ -351,20 +399,20 @@ export function priceBreakdown(design: Design, unit: Unit = 'cm'): { lines: Pric
   }
   for (const [key, qty] of [...frameCounts.entries()].sort()) {
     const [w, low] = key.split(':')
-    const width = Number(w) as FrameWidth
-    const spec = frameSpecByWidth.get(width)
-    if (!spec) continue
-    const price = low ? spec.price + 60 : spec.price
+    const width = Number(w)
+    const spec = frameSpecByWidth.get(width as FrameWidth)
+    // custom widths: price ~ $4.6/cm (matches the preset ladder)
+    const basePrice = spec ? spec.price : Math.round(width * 4.6 + 110)
+    const price = low ? basePrice + 60 : basePrice
     lines.push({
-      label: low ? `Smoker Table ${width}` : spec.name,
+      label: low ? `Smoker Table ${width}` : spec ? spec.name : `Custom Frame ${width}`,
       detail: `${formatLen(width, unit)} ${low ? 'lowered table' : 'module'}`,
       qty,
       unit: price,
       total: price * qty,
     })
   }
-  const layout = design.layout ?? 'straight'
-  const corners = layout === 'u' ? 2 : layout.startsWith('l-') ? 1 : 0
+  const corners = (['left', 'right'] as const).filter((s) => cornerFor(design, s)).length
   if (corners) {
     lines.push({
       label: 'Corner unit',

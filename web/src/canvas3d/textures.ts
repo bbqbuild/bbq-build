@@ -54,8 +54,14 @@ export const FINISH_COLORS: Record<Frame['finish'], string> = {
   stone: '#6c6862',
 }
 
-/** Front of one cabinet frame incl. its base appliance (or empty-cavity hint). */
-export function frameFrontTexture(frame: Frame, base: PlacedAppliance | undefined): THREE.CanvasTexture {
+/**
+ * Front of one cabinet frame. In 3D the base appliance is real geometry, so
+ * this only draws the finish + a dark cavity; when the cavity is empty it adds
+ * the dashed "+" hint. Pass `hasBase=true` to suppress the hint.
+ */
+export function frameFrontTexture(frame: Frame, hasBase: boolean): THREE.CanvasTexture {
+  const base = undefined as PlacedAppliance | undefined
+  void hasBase
   const bodyH = frameBodyH(frame)
   const [c, ctx] = makeCanvas(frame.width, bodyH)
   const w = frame.width
@@ -100,7 +106,7 @@ export function frameFrontTexture(frame: Frame, base: PlacedAppliance | undefine
       }
     }
     if (painter) painter(ctx, o, { counterY: -bodyH - COUNTER_T, counterH: COUNTER_T, time: 0.4 })
-  } else {
+  } else if (!hasBase) {
     ctx.save()
     ctx.setLineDash([2.5, 2.5])
     strokeRoundRect(ctx, o.x + 2, o.y + 2, o.w - 4, o.h - 4, 1, 'rgba(148,163,184,0.3)', 0.7)

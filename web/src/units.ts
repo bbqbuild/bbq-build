@@ -29,3 +29,50 @@ export function formatLen(cm: number, unit: Unit): string {
 export function formatLenBare(cm: number, unit: Unit): string {
   return unit === 'cm' ? String(cm) : formatLen(cm, unit)
 }
+
+/** Value for a text input: cm as-is, imperial as inches with one decimal. */
+export function lenInputValue(cm: number, unit: Unit): string {
+  if (unit === 'cm') return String(Math.round(cm))
+  return String(Math.round((cm / 2.54) * 10) / 10)
+}
+
+/**
+ * Parse a typed length back to cm. Accepts (cm mode) plain numbers, and
+ * (imperial) forms like `72`, `72in`, `6'`, `5'11"`, `5' 11`, `180cm`.
+ * Returns null if unparseable.
+ */
+export function parseLen(text: string, unit: Unit): number | null {
+  const t = text.trim().toLowerCase()
+  if (!t) return null
+  if (t.endsWith('cm')) {
+    const n = parseFloat(t)
+    return isFinite(n) ? n : null
+  }
+  if (unit === 'cm' && !/['"’″]|ft|in/.test(t)) {
+    const n = parseFloat(t)
+    return isFinite(n) ? n : null
+  }
+  // imperial: feet and inches
+  const ftMatch = t.match(/(-?\d+(?:\.\d+)?)\s*(?:'|’|ft|feet|foot)/)
+  const inMatch = t.match(/(-?\d+(?:\.\d+)?)\s*(?:"|″|''|in|inch|inches)?\s*$/)
+  let inches = 0
+  let matched = false
+  if (ftMatch) {
+    inches += parseFloat(ftMatch[1]) * 12
+    matched = true
+  }
+  if (inMatch && !(ftMatch && ftMatch.index === inMatch.index)) {
+    const rest = ftMatch ? t.slice((ftMatch.index ?? 0) + ftMatch[0].length) : t
+    const m = rest.match(/(-?\d+(?:\.\d+)?)/)
+    if (m) {
+      inches += parseFloat(m[1])
+      matched = true
+    }
+  }
+  if (!matched) {
+    const n = parseFloat(t)
+    if (!isFinite(n)) return null
+    inches = n
+  }
+  return inches * 2.54
+}

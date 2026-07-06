@@ -35,6 +35,8 @@ export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onOpe
   const toggleView = useStore((s) => s.toggleView)
   const measuring = useStore((s) => s.measuring)
   const toggleMeasure = useStore((s) => s.toggleMeasure)
+  const openMode = useStore((s) => s.openMode)
+  const toggleOpen = useStore((s) => s.toggleOpen)
   const [menuOpen, setMenuOpen] = useState(false)
   const [nameDraft, setNameDraft] = useState<string | null>(null)
 
@@ -102,6 +104,14 @@ export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onOpe
             title="Measure tool (M) — click two points"
           >
             📏
+          </button>
+          <button
+            className={`btn btn-icon ${openMode ? 'active' : ''}`}
+            onClick={toggleOpen}
+            disabled={viewMode !== '3d'}
+            title="Open appliances — see doors, drawers and hoods open"
+          >
+            {openMode ? '🔓' : '🔒'}
           </button>
         </div>
         <div className="btn-group">

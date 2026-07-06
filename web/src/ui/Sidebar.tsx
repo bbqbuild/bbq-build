@@ -7,6 +7,7 @@ import { aiSearchAppliances } from '../auth/api'
 import { groundDepth, type LayoutShape } from '../types'
 import { formatPrice, useStore } from '../state/store'
 import { formatLen } from '../units'
+import { SizeRow } from './SizeRow'
 import { useToasts } from './toast'
 import type { ApplianceType, FrameWidth } from '../types'
 
@@ -53,77 +54,6 @@ function BuildTab() {
 
   return (
     <div className="sidebar-body">
-      <section>
-        <h3>Layout</h3>
-        <div className="layout-row">
-          {LAYOUTS.map((l) => (
-            <button
-              key={l.id}
-              className={`layout-chip ${layout === l.id ? 'active' : ''}`}
-              onClick={() => setLayout(l.id)}
-              title={l.name}
-            >
-              <span className="layout-glyph">{l.glyph}</span>
-              {l.name}
-            </button>
-          ))}
-        </div>
-        <label className="check-row" title="A freestanding island counter in front of the main run">
-          <input type="checkbox" checked={island} onChange={(e) => setIsland(e.target.checked)} />
-          <span>Island in front</span>
-        </label>
-        {(layout !== 'straight' || island) && (
-          <p className="hint">Drag frames between runs on the canvas, or drop new ones onto a wing.</p>
-        )}
-      </section>
-
-      <section>
-        <h3>Ground</h3>
-        <div className="ground-types">
-          {GROUND_TYPES.map((g) => (
-            <button
-              key={g.id}
-              className={`ground-chip ground-${g.id} ${ground.type === g.id ? 'active' : ''}`}
-              onClick={() => setGround({ type: g.id })}
-              title={`${g.name} — ${formatPrice(g.pricePerM)}/m`}
-            >
-              <span className={`swatch swatch-${g.id}`} />
-              {g.name}
-            </button>
-          ))}
-        </div>
-        <label className="slider-row">
-          <span>
-            Width <strong>{formatLen(width, unit)}</strong>
-          </span>
-          <input
-            type="range"
-            min={100}
-            max={1000}
-            step={10}
-            value={width}
-            onChange={(e) => setWidth(Number(e.target.value))}
-            onPointerUp={() => setGround({ width })}
-            onKeyUp={(e) => (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && setGround({ width })}
-          />
-        </label>
-        <label className="slider-row">
-          <span>
-            Depth <strong>{formatLen(depth, unit)}</strong>
-          </span>
-          <input
-            type="range"
-            min={120}
-            max={1000}
-            step={10}
-            value={depth}
-            onChange={(e) => setDepth(Number(e.target.value))}
-            onPointerUp={() => setGround({ depth })}
-            onKeyUp={(e) => (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && setGround({ depth })}
-          />
-        </label>
-      </section>
-
       <section>
         <h3>Frames</h3>
         <p className="hint">Click to add, or drag onto the canvas to choose the position.</p>
@@ -192,9 +122,90 @@ function BuildTab() {
           </div>
         </section>
       )}
+
+      <CollapsibleSection title="Base & layout" storageKey="bbq_ground_open">
+        <h4 className="sub-h">Shape</h4>
+        <div className="layout-row">
+          {LAYOUTS.map((l) => (
+            <button
+              key={l.id}
+              className={`layout-chip ${layout === l.id ? 'active' : ''}`}
+              onClick={() => setLayout(l.id)}
+              title={l.name}
+            >
+              <span className="layout-glyph">{l.glyph}</span>
+              {l.name}
+            </button>
+          ))}
+        </div>
+        <label className="check-row" title="A freestanding island counter in front of the main run">
+          <input type="checkbox" checked={island} onChange={(e) => setIsland(e.target.checked)} />
+          <span>Island in front</span>
+        </label>
+
+        <h4 className="sub-h">Ground</h4>
+        <div className="ground-types">
+          {GROUND_TYPES.map((g) => (
+            <button
+              key={g.id}
+              className={`ground-chip ground-${g.id} ${ground.type === g.id ? 'active' : ''}`}
+              onClick={() => setGround({ type: g.id })}
+              title={`${g.name} — ${formatPrice(g.pricePerM)}/m`}
+            >
+              <span className={`swatch swatch-${g.id}`} />
+              {g.name}
+            </button>
+          ))}
+        </div>
+        <SizeRow
+          label="Width"
+          cm={width}
+          unit={unit}
+          min={100}
+          max={1000}
+          onSlide={(v) => setWidth(v)}
+          onCommit={(v) => {
+            setWidth(v)
+            setGround({ width: v })
+          }}
+        />
+        <SizeRow
+          label="Depth"
+          cm={depth}
+          unit={unit}
+          min={120}
+          max={1000}
+          onSlide={(v) => setDepth(v)}
+          onCommit={(v) => {
+            setDepth(v)
+            setGround({ depth: v })
+          }}
+        />
+      </CollapsibleSection>
     </div>
   )
 }
+
+function CollapsibleSection({ title, storageKey, children }: { title: string; storageKey: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(() => localStorage.getItem(storageKey) === 'open')
+  return (
+    <section className="collapsible">
+      <button
+        className="collapsible-head"
+        onClick={() => {
+          const next = !open
+          setOpen(next)
+          localStorage.setItem(storageKey, next ? 'open' : 'closed')
+        }}
+      >
+        <span className={`chevron ${open ? 'open' : ''}`}>▸</span>
+        {title}
+      </button>
+      {open && <div className="collapsible-body">{children}</div>}
+    </section>
+  )
+}
+
 
 function AppliancesTab() {
   const setDragging = useStore((s) => s.setDragging)

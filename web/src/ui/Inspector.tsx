@@ -5,7 +5,8 @@ import { FINISHES, frameSpecByWidth, GROUND_TYPES } from '../catalog/frames'
 import { applianceForZone, formatPrice, priceBreakdown, useStore } from '../state/store'
 import { formatLen } from '../units'
 import { useToasts } from './toast'
-import { RUN_NAMES } from '../types'
+import { MAX_FRAME_H, MIN_FRAME_H, RUN_NAMES, cornerFor, frameBodyH } from '../types'
+import { SizeRow } from './SizeRow'
 import type { ApplianceType, Frame, Zone } from '../types'
 
 export function Inspector() {
@@ -19,6 +20,8 @@ export function Inspector() {
   } else if (selection.kind === 'appliance') {
     const placed = design.appliances.find((a) => a.id === selection.id)
     content = placed ? <AppliancePanel placedId={placed.id} /> : <SummaryPanel />
+  } else if (selection.kind === 'corner') {
+    content = <CornerPanel side={selection.id} />
   } else if (selection.kind === 'ground') {
     content = <GroundPanel />
   } else {
@@ -119,9 +122,11 @@ function FramePanel({ frame }: { frame: Frame }) {
   const removeFrame = useStore((s) => s.removeFrame)
   const setFrameFinish = useStore((s) => s.setFrameFinish)
   const setFrameLowered = useStore((s) => s.setFrameLowered)
+  const setFrameWidth = useStore((s) => s.setFrameWidth)
+  const setFrameHeight = useStore((s) => s.setFrameHeight)
   const unit = useStore((s) => s.unit)
   const push = useToasts((s) => s.push)
-  const spec = frameSpecByWidth.get(frame.width)
+  const spec = frameSpecByWidth.get(frame.width as never)
   const index = design.frames.findIndex((f) => f.id === frame.id)
 
   return (
@@ -155,6 +160,24 @@ function FramePanel({ frame }: { frame: Frame }) {
         />
         <span>Lowered counter (smoker table)</span>
       </label>
+      <SizeRow
+        label="Width"
+        cm={frame.width}
+        unit={unit}
+        min={20}
+        max={200}
+        onSlide={(v) => setFrameWidth(frame.id, v)}
+        onCommit={(v) => setFrameWidth(frame.id, v)}
+      />
+      <SizeRow
+        label="Height"
+        cm={frameBodyH(frame)}
+        unit={unit}
+        min={MIN_FRAME_H}
+        max={MAX_FRAME_H}
+        onSlide={(v) => setFrameHeight(frame.id, v)}
+        onCommit={(v) => setFrameHeight(frame.id, v)}
+      />
       <SlotEditor frame={frame} zone="top" title="Counter level" />
       <SlotEditor frame={frame} zone="base" title="Under counter" />
       <dl className="facts">
@@ -241,13 +264,68 @@ function SlotEditor({ frame, zone, title }: { frame: Frame; zone: Zone; title: s
   )
 }
 
+function CornerPanel({ side }: { side: 'left' | 'right' }) {
+  const design = useStore((s) => s.design)
+  const setCornerFinish = useStore((s) => s.setCornerFinish)
+  const setCornerLowered = useStore((s) => s.setCornerLowered)
+  const setCorner = useStore((s) => s.setCorner)
+  const corner = cornerFor(design, side)
+
+  if (!corner) {
+    return (
+      <div className="panel">
+        <h2>Corner <span className="h-hint">{side} junction</span></h2>
+        <p className="hint">This corner has been removed — the wing meets the back run directly.</p>
+        <button className="btn btn-ghost" onClick={() => setCorner(side, true)}>
+          + Add corner unit
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="panel">
+      <h2>
+        Corner <span className="h-hint">{side} junction · 60 × 60 cm</span>
+      </h2>
+      <div className="finish-row">
+        {FINISHES.map((f) => (
+          <button
+            key={f.id}
+            className={`finish-swatch ${corner.finish === f.id ? 'active' : ''}`}
+            style={{ background: f.swatch }}
+            onClick={() => setCornerFinish(side, f.id)}
+            title={f.name}
+          />
+        ))}
+      </div>
+      <label className="check-row">
+        <input type="checkbox" checked={Boolean(corner.lowered)} onChange={(e) => setCornerLowered(side, e.target.checked)} />
+        <span>Lowered counter</span>
+      </label>
+      <dl className="facts">
+        <div>
+          <dt>Junction cabinet</dt>
+          <dd>{formatPrice(350)}</dd>
+        </div>
+      </dl>
+      <button className="btn btn-danger-ghost" onClick={() => setCorner(side, false)}>
+        Remove corner
+      </button>
+    </div>
+  )
+}
+
 function AppliancePanel({ placedId }: { placedId: string }) {
   const design = useStore((s) => s.design)
   const removeAppliance = useStore((s) => s.removeAppliance)
+  const flipAppliance = useStore((s) => s.flipAppliance)
   const select = useStore((s) => s.select)
   const placed = design.appliances.find((a) => a.id === placedId)!
   const type: ApplianceType = getAppliance(placed.typeId)
   const frameIdx = design.frames.findIndex((f) => f.id === placed.frameId)
+  // single-door units can flip their hinge side
+  const canFlip = /^(door-40|fridge|kegerator|icemaker)/.test(type.paintAs ?? type.id)
 
   return (
     <div className="panel">
@@ -275,6 +353,12 @@ function AppliancePanel({ placedId }: { placedId: string }) {
           <dd className="accent">{formatPrice(type.price)}</dd>
         </div>
       </dl>
+      {canFlip && (
+        <label className="check-row" title="Which side the door is hinged on">
+          <input type="checkbox" checked={Boolean(placed.flipped)} onChange={() => flipAppliance(placed.id)} />
+          <span>Hinge on the right</span>
+        </label>
+      )}
       <button className="btn btn-ghost" onClick={() => select({ kind: 'frame', id: placed.frameId })}>
         Edit this frame
       </button>

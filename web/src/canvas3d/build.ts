@@ -4,10 +4,10 @@
 import * as THREE from 'three'
 import { getAppliance } from '../catalog/appliances'
 import { computeScene, type SceneLayout3 } from '../canvas/scene'
-import { TOP_HEIGHTS } from '../canvas/layout'
 import type { Design, RunId } from '../types'
-import { COUNTER_OVERHANG, COUNTER_T, GROUND_T, RUN_DEPTH, frameBodyH } from '../types'
-import { FINISH_COLORS, applianceFrontTexture, frameFrontTexture, groundTopTexture, labelSprite } from './textures'
+import { COUNTER_OVERHANG, COUNTER_T, GROUND_T, RUN_DEPTH, cornerFor, frameBodyH } from '../types'
+import { FINISH_COLORS, frameFrontTexture, groundTopTexture, labelSprite } from './textures'
+import { baseAppliance3d, topAppliance3d, type AnimPart } from './appliances3d'
 import { formatLenBare, type Unit } from '../units'
 
 export interface RunBasis {
@@ -25,6 +25,8 @@ export interface Kitchen3D {
   pickables: THREE.Object3D[]
   bases: Map<RunId, RunBasis>
   scene2d: SceneLayout3
+  /** animatable appliance parts (doors, drawers, hoods, lids) */
+  anim: AnimPart[]
   /** center + radius for camera fitting */
   center: THREE.Vector3
   radius: number
@@ -48,6 +50,7 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
   const group = new THREE.Group()
   const pickables: THREE.Object3D[] = []
   const bases = new Map<RunId, RunBasis>()
+  const anim: AnimPart[] = []
 
   // ---- ground ----
   const g = scene2d.ground
@@ -112,23 +115,65 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
     }
     bases.set(run.id, basis)
 
-    // ---- frames ----
+    // ---- frames (per-frame group so appliance parts can animate in local space) ----
     for (const fl of run.elev.frames) {
       const frame = fl.frame
       const bodyH = frameBodyH(frame)
-      const base = design.appliances.find((a) => a.frameId === frame.id && a.zone === 'base')
-      const frontTex = frameFrontTexture(frame, base)
+      const centerU = fl.body.x + frame.width / 2
+
+      const fgroup = new THREE.Group()
+      fgroup.position.copy(basis.pos(centerU, 0))
+      fgroup.rotation.y = basis.rotY
+      group.add(fgroup)
+      pickables.push(fgroup)
+
+      // body with a dark cavity front (base appliance is real 3D geometry)
+      const hasBase = design.appliances.some((a) => a.frameId === frame.id && a.zone === 'base')
+      const frontTex = frameFrontTexture(frame, hasBase)
       const fmat = finishMat(frame.finish)
       const mats = [fmat, fmat, fmat, fmat, new THREE.MeshStandardMaterial({ map: frontTex, roughness: 0.6 }), fmat]
-      const box = new THREE.Mesh(new THREE.BoxGeometry(frame.width, bodyH, RUN_DEPTH - 2), mats)
-      const c = basis.pos(fl.body.x + frame.width / 2, bodyH / 2)
-      box.position.copy(c)
-      box.rotation.y = basis.rotY
-      box.castShadow = true
-      box.receiveShadow = true
-      box.userData = { kind: 'frame', id: frame.id, run: run.id }
-      group.add(box)
-      pickables.push(box)
+      const body = new THREE.Mesh(new THREE.BoxGeometry(frame.width, bodyH, RUN_DEPTH - 2), mats)
+      body.position.set(0, bodyH / 2, 0)
+      body.castShadow = true
+      body.receiveShadow = true
+      body.userData = { kind: 'frame', id: frame.id, run: run.id }
+      fgroup.add(body)
+
+      // base appliance
+      const base = design.appliances.find((a) => a.frameId === frame.id && a.zone === 'base')
+      if (base) {
+        try {
+          const bt = getAppliance(base.typeId)
+          const built = baseAppliance3d(base, bt, frame.width, bodyH)
+          for (const m of built.meshes) {
+            m.traverse((c) => {
+              if (c.userData.kind === 'appliance') c.userData.run = run.id
+            })
+            fgroup.add(m)
+          }
+          anim.push(...built.parts)
+        } catch {
+          /* unknown type */
+        }
+      }
+
+      // top appliance
+      const top = design.appliances.find((a) => a.frameId === frame.id && a.zone === 'top')
+      if (top) {
+        try {
+          const tt = getAppliance(top.typeId)
+          const built = topAppliance3d(top, tt, frame.width, -fl.counterTopY)
+          for (const m of built.meshes) {
+            m.traverse((c) => {
+              if (c.userData.kind === 'appliance') c.userData.run = run.id
+            })
+            fgroup.add(m)
+          }
+          anim.push(...built.parts)
+        } catch {
+          /* unknown type */
+        }
+      }
     }
 
     // ---- counters (per segment) ----
@@ -138,67 +183,13 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
         new THREE.BoxGeometry(seg.w, COUNTER_T, RUN_DEPTH + COUNTER_OVERHANG * 2),
         [ce, ce, counterMat.clone(), ce, ce, ce],
       )
-      const cc = basis.pos(seg.x + seg.w / 2, -seg.y + COUNTER_T / 2)
-      cbox.position.copy(cc)
+      cbox.position.copy(basis.pos(seg.x + seg.w / 2, -seg.y + COUNTER_T / 2))
       cbox.rotation.y = basis.rotY
       cbox.castShadow = true
       cbox.receiveShadow = true
-      // counters pick as their run's nearest frame? keep unpickable-through: tag run
       cbox.userData = { kind: 'counter', run: run.id }
       group.add(cbox)
       pickables.push(cbox)
-    }
-
-    // ---- top-zone appliances ----
-    for (const al of run.elev.appliances) {
-      if (al.placed.zone !== 'top') continue
-      let type
-      try {
-        type = getAppliance(al.placed.typeId)
-      } catch {
-        continue
-      }
-      const h = TOP_HEIGHTS[type.id] ?? (type.paintAs ? TOP_HEIGHTS[type.paintAs] : undefined) ?? 20
-      const w = al.rect.w
-      const counterTop = -al.frame.counterTopY
-      const uCenter = al.rect.x + w / 2
-
-      if (type.mount === 'kamado') {
-        const paint = (type.paintAs ?? type.id).startsWith('egg')
-        const r = Math.min(w * 0.36, 30)
-        const kam = new THREE.Mesh(
-          new THREE.SphereGeometry(r, 24, 18),
-          new THREE.MeshStandardMaterial({ color: paint ? '#2f6a3c' : '#26292d', roughness: 0.35, metalness: 0.15 }),
-        )
-        kam.scale.set(1, 1.18, 1)
-        kam.position.copy(basis.pos(uCenter, counterTop + r * 0.95))
-        kam.castShadow = true
-        kam.userData = { kind: 'appliance', id: al.placed.id, run: run.id }
-        group.add(kam)
-        pickables.push(kam)
-        // chimney cap
-        const cap = new THREE.Mesh(new THREE.CylinderGeometry(4, 4.6, 5, 12), steelMat.clone())
-        cap.position.copy(basis.pos(uCenter, counterTop + r * 0.95 + r * 1.18))
-        cap.userData = { kind: 'appliance', id: al.placed.id, run: run.id }
-        group.add(cap)
-        pickables.push(cap)
-        continue
-      }
-
-      const depth = type.mount === 'oncounter' ? RUN_DEPTH - 18 : RUN_DEPTH - 12
-      const texH = h + COUNTER_T
-      const tex = applianceFrontTexture(al.placed, type, w, texH)
-      const front = new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 0.45, metalness: 0.4 })
-      const sm = steelMat.clone()
-      const mats = [sm, sm, sm, sm, front, darkMat.clone()]
-      const abox = new THREE.Mesh(new THREE.BoxGeometry(w, texH, depth), mats)
-      abox.position.copy(basis.pos(uCenter, counterTop + texH / 2 - COUNTER_T))
-      abox.rotation.y = basis.rotY
-      // shift toward the face so the art sits proud of the counter front
-      abox.castShadow = true
-      abox.userData = { kind: 'appliance', id: al.placed.id, run: run.id }
-      group.add(abox)
-      pickables.push(abox)
     }
 
     // ---- dimension sprites ----
@@ -219,27 +210,57 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
   }
 
   // ---- corner units ----
-  const layout = design.layout ?? 'straight'
-  const hasL = layout === 'l-left' || layout === 'u'
-  const hasR = layout === 'l-right' || layout === 'u'
-  const cornerFinish = design.frames[0]?.finish ?? 'graphite'
-  for (const side of [hasL ? 'L' : null, hasR ? 'R' : null]) {
-    if (!side) continue
-    const back = scene2d.runs.find((r) => r.id === 'back')!
-    const x = side === 'L' ? back.plan.x - 60 : back.plan.x + back.plan.w
-    const cbody = new THREE.Mesh(new THREE.BoxGeometry(60, 82, RUN_DEPTH - 2), finishMat(cornerFinish))
-    cbody.position.set(x + 30, 41, RUN_DEPTH / 2)
+  const back = scene2d.runs.find((r) => r.id === 'back')
+  for (const side of ['left', 'right'] as const) {
+    const corner = cornerFor(design, side)
+    if (!corner || !back) continue
+    const bodyH = corner.lowered ? 58 : 82
+    const x = side === 'left' ? back.plan.x - 60 : back.plan.x + back.plan.w
+    const cbody = new THREE.Mesh(new THREE.BoxGeometry(60, bodyH, RUN_DEPTH - 2), finishMat(corner.finish))
+    cbody.position.set(x + 30, bodyH / 2, RUN_DEPTH / 2)
     cbody.castShadow = true
     cbody.receiveShadow = true
-    cbody.userData = { kind: 'corner' }
+    cbody.userData = { kind: 'corner', id: side }
     group.add(cbody)
     pickables.push(cbody)
     const ctop = new THREE.Mesh(new THREE.BoxGeometry(60 + COUNTER_OVERHANG, COUNTER_T, RUN_DEPTH + COUNTER_OVERHANG * 2), counterMat.clone())
-    ctop.position.set(x + 30, 82 + COUNTER_T / 2, RUN_DEPTH / 2)
+    ctop.position.set(x + 30, bodyH + COUNTER_T / 2, RUN_DEPTH / 2)
     ctop.castShadow = true
-    ctop.userData = { kind: 'corner' }
+    ctop.userData = { kind: 'corner', id: side }
     group.add(ctop)
     pickables.push(ctop)
+  }
+
+  // ---- ground dimension lines (measures on the canvas) ----
+  if (showDims) {
+    const dimMat = new THREE.LineBasicMaterial({ color: 0x94a3b8, transparent: true, opacity: 0.7 })
+    const mkDim = (a: THREE.Vector3, b: THREE.Vector3, text: string) => {
+      const geo = new THREE.BufferGeometry().setFromPoints([a, b])
+      group.add(new THREE.Line(geo, dimMat))
+      const tick = (p: THREE.Vector3, dir: THREE.Vector3) => {
+        const t = new THREE.BufferGeometry().setFromPoints([p.clone().add(dir), p.clone().sub(dir)])
+        group.add(new THREE.Line(t, dimMat))
+      }
+      const perp = new THREE.Vector3(0, 6, 0)
+      tick(a, perp)
+      tick(b, perp)
+      const sp = labelSprite(text, 0.85)
+      sp.position.copy(a.clone().add(b).multiplyScalar(0.5).add(new THREE.Vector3(0, 8, 0)))
+      group.add(sp)
+    }
+    const y = 2
+    // width along the front edge
+    mkDim(
+      new THREE.Vector3(g.x, y, g.z + g.d + 10),
+      new THREE.Vector3(g.x + g.w, y, g.z + g.d + 10),
+      formatLenBare(design.ground.width, unit) + (unit === 'cm' ? ' cm' : ''),
+    )
+    // depth along the right edge
+    mkDim(
+      new THREE.Vector3(g.x + g.w + 10, y, g.z),
+      new THREE.Vector3(g.x + g.w + 10, y, g.z + g.d),
+      formatLenBare(g.d, unit) + (unit === 'cm' ? ' cm' : ''),
+    )
   }
 
   // ---- bounds ----
@@ -247,5 +268,5 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
   const center = bbox.getCenter(new THREE.Vector3())
   const radius = Math.max(120, bbox.getSize(new THREE.Vector3()).length() / 2)
 
-  return { group, pickables, bases, scene2d, center, radius }
+  return { group, pickables, bases, scene2d, anim, center, radius }
 }

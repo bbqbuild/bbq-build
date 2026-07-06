@@ -100,6 +100,7 @@ export function Stage3D() {
     let drag: DragState | null = null
     let downPos: { x: number; y: number } | null = null
     let downHit: THREE.Object3D | null = null
+    let openT = 0
 
     function resize() {
       const w = wrap.clientWidth
@@ -159,7 +160,7 @@ export function Stage3D() {
       const r = renderer.domElement.getBoundingClientRect()
       pointer.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1)
       raycaster.setFromCamera(pointer, camera)
-      const hits = raycaster.intersectObjects(kitchen.pickables, false)
+      const hits = raycaster.intersectObjects(kitchen.pickables, true)
       return hits[0] ?? null
     }
 
@@ -277,7 +278,8 @@ export function Stage3D() {
       if (downPos && Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y) < 5) {
         const hit = pick(e.clientX, e.clientY)
         const ud = hit?.object.userData
-        if (!ud || ud.kind === 'corner') s.select({ kind: 'none' })
+        if (!ud) s.select({ kind: 'none' })
+        else if (ud.kind === 'corner') s.select({ kind: 'corner', id: ud.id })
         else if (ud.kind === 'ground') s.select({ kind: 'ground' })
         else if (ud.kind === 'frame') s.select({ kind: 'frame', id: ud.id })
         else if (ud.kind === 'appliance') s.select({ kind: 'appliance', id: ud.id })
@@ -410,16 +412,17 @@ export function Stage3D() {
       const s = useStore.getState()
       if (s.selection.kind !== 'frame' && s.selection.kind !== 'appliance') return
       const targetId = s.selection.id
-      const target = kitchen.pickables.find(
-        (o) => o.userData.id === targetId && (o.userData.kind === 'frame' || o.userData.kind === 'appliance'),
-      )
+      let target: THREE.Object3D | null = null
+      kitchen.group.traverse((o) => {
+        if (!target && o.userData.id === targetId && (o.userData.kind === 'frame' || o.userData.kind === 'appliance')) target = o
+      })
       if (!target) return
       const tc = new THREE.Box3().setFromObject(target).getCenter(new THREE.Vector3())
       const dir = tc.clone().sub(camera.position)
       const dist = dir.length()
       raycaster.set(camera.position, dir.normalize())
       raycaster.far = dist - 4
-      const hits = raycaster.intersectObjects(kitchen.pickables, false)
+      const hits = raycaster.intersectObjects(kitchen.pickables, true)
       raycaster.far = Infinity
       for (const h of hits) {
         const obj = h.object as THREE.Mesh
@@ -453,16 +456,32 @@ export function Stage3D() {
         measureGroup.clear()
       }
 
+      // open-animation lerp
+      const targetOpen = s.openMode ? 1 : 0
+      openT += (targetOpen - openT) * 0.14
+      if (Math.abs(targetOpen - openT) < 0.001) openT = targetOpen
+      if (kitchen) {
+        for (const p of kitchen.anim) {
+          if (p.kind === 'hingeY') p.obj.rotation.y = p.amount * openT
+          else if (p.kind === 'liftX') p.obj.rotation.x = p.amount * openT
+          else if (p.kind === 'slideZ') p.obj.position.z = p.base + p.amount * openT
+        }
+      }
+
       // selection helper box
-      if (kitchen && (s.selection.kind === 'frame' || s.selection.kind === 'appliance')) {
+      if (kitchen && (s.selection.kind === 'frame' || s.selection.kind === 'appliance' || s.selection.kind === 'corner')) {
         const id = s.selection.id
-        const target = kitchen.pickables.find(
-          (o) => o.userData.id === id && (o.userData.kind === 'frame' || o.userData.kind === 'appliance'),
-        )
-        if (target) {
-          ;(selectBox.box as THREE.Box3).setFromObject(target).expandByScalar(1.5)
-          selectBox.visible = true
-        } else selectBox.visible = false
+        const kind = s.selection.kind
+        const box = new THREE.Box3()
+        let found = false
+        kitchen.group.traverse((o) => {
+          if (o.userData.kind === kind && o.userData.id === id) {
+            box.union(new THREE.Box3().setFromObject(o))
+            found = true
+          }
+        })
+        selectBox.visible = found
+        if (found) (selectBox.box as THREE.Box3).copy(box.expandByScalar(1.5))
       } else {
         selectBox.visible = false
       }

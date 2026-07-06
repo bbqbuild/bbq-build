@@ -15,16 +15,27 @@ export type LayoutShape = 'straight' | 'l-left' | 'l-right' | 'u'
 /** Which counter run a frame belongs to. */
 export type RunId = 'back' | 'left' | 'right' | 'island'
 
+export type CornerId = 'left' | 'right'
+
+/** A corner junction cabinet between the back run and a wing. */
+export interface Corner {
+  finish: FrameFinish
+  lowered?: boolean
+}
+
 export type FrameWidth = 40 | 60 | 80 | 90
 
 export type FrameFinish = 'graphite' | 'steel' | 'teak' | 'stone'
 
 export interface Frame {
   id: string
-  width: FrameWidth
+  /** module width in cm — preset (40/60/80/90) or any custom value */
+  width: number
   finish: FrameFinish
   /** Lowered smoker table — counter drops so kamado rims land at working height. */
   lowered?: boolean
+  /** Custom body height (cm). Overrides the standard/lowered default. */
+  height?: number
   /** Which run this frame sits in (default 'back'). */
   run?: RunId
 }
@@ -40,6 +51,8 @@ export interface PlacedAppliance {
   typeId: string
   frameId: string
   zone: Zone
+  /** Door/lid hinge on the right instead of the default left. */
+  flipped?: boolean
 }
 
 export interface Design {
@@ -51,8 +64,19 @@ export interface Design {
   island?: boolean
   frames: Frame[]
   appliances: PlacedAppliance[]
+  /** Corner units per side. Missing key → default corner for active wings; explicit null → removed. */
+  corners?: Partial<Record<CornerId, Corner | null>>
   /** AI-sourced real products added to this design's catalog. */
   custom?: ApplianceType[]
+}
+
+/** Resolve the corner unit for a side, honoring removal and defaults. */
+export function cornerFor(design: Design, side: CornerId): Corner | null {
+  const wing = side === 'left' ? 'l-left' : 'l-right'
+  const active = design.layout === wing || design.layout === 'u'
+  if (!active) return null
+  if (design.corners && side in design.corners) return design.corners[side] ?? null
+  return { finish: design.frames[0]?.finish ?? 'graphite' }
 }
 
 export const RUN_NAMES: Record<RunId, string> = {
@@ -116,6 +140,7 @@ export type Selection =
   | { kind: 'ground' }
   | { kind: 'frame'; id: string }
   | { kind: 'appliance'; id: string }
+  | { kind: 'corner'; id: CornerId }
 
 export const FRAME_WIDTHS: FrameWidth[] = [40, 60, 80, 90]
 
@@ -124,7 +149,11 @@ export const FRAME_BODY_H = 82
 export const LOWERED_BODY_H = 58
 export const COUNTER_T = 6
 
-export function frameBodyH(f: Pick<Frame, 'lowered'>): number {
+export const MIN_FRAME_H = 45
+export const MAX_FRAME_H = 140
+
+export function frameBodyH(f: Pick<Frame, 'lowered' | 'height'>): number {
+  if (f.height) return Math.max(MIN_FRAME_H, Math.min(MAX_FRAME_H, f.height))
   return f.lowered ? LOWERED_BODY_H : FRAME_BODY_H
 }
 export const COUNTER_OVERHANG = 3
