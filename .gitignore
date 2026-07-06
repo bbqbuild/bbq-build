@@ -5,3 +5,5 @@ server/*.sqlite-*
 screenshots/
 .env
 *.log
+web/.env
+web/.env.production

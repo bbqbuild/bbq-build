@@ -1,0 +1,16 @@
+import { chromium } from 'playwright'
+const browser = await chromium.connectOverCDP('http://localhost:9222')
+const ctx = browser.contexts()[0]
+const page = ctx.pages().find(p => p.url().includes('supabase.com/dashboard/new'))
+await page.bringToFront()
+await page.fill('input[name="name"]', 'bbq-build')
+await page.waitForTimeout(500)
+await page.screenshot({ path: 'screenshots/supabase-orgfilled.png' })
+const btn = await page.$('button:has-text("Create organization")')
+await btn.click()
+await page.waitForTimeout(5000)
+console.log('after create URL:', page.url())
+await page.screenshot({ path: 'screenshots/supabase-aftercreate.png' })
+const txt = await page.evaluate(() => document.body.innerText.slice(0, 400))
+console.log('TEXT:', JSON.stringify(txt))
+await browser.close()

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { clearSession, createDesign, getToken, updateDesign } from './auth/api'
+import { clearSession, createDesign, setCachedEmail, updateDesign } from './auth/api'
+import { supabase } from './auth/supabase'
 import { Login } from './auth/Login'
 import { CanvasStage, fitView } from './canvas/CanvasStage'
 import { Stage3D } from './canvas3d/Stage3D'
@@ -20,12 +21,28 @@ import type { SavedDesign } from './types'
 type Modal = 'none' | 'presets' | 'spec' | 'designs' | 'validate'
 
 export default function App() {
-  const [authed, setAuthed] = useState<boolean>(() => Boolean(getToken()))
+  const [authed, setAuthed] = useState<boolean>(false)
+  const [ready, setReady] = useState(false)
   const [route, setRoute] = useState<'home' | 'builder'>('home')
   const [modal, setModal] = useState<Modal>('none')
   const [saving, setSaving] = useState(false)
   const viewMode = useStore((s) => s.viewMode)
   const push = useToasts((s) => s.push)
+
+  // hydrate + track Supabase auth session
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setCachedEmail(data.session?.user?.email ?? null)
+      setAuthed(Boolean(data.session))
+      setReady(true)
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      setCachedEmail(session?.user?.email ?? null)
+      setAuthed(Boolean(session))
+      if (!session) setRoute('home')
+    })
+    return () => sub.subscription.unsubscribe()
+  }, [])
 
   useEffect(() => {
     const onLogout = () => setAuthed(false)
@@ -136,6 +153,10 @@ export default function App() {
     clearSession()
     setAuthed(false)
     setRoute('home')
+  }
+
+  if (!ready) {
+    return <div className="app-boot" />
   }
 
   if (!authed) {

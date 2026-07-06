@@ -24,6 +24,8 @@ const HOST = process.env.HOST || (process.env.RENDER ? '0.0.0.0' : '127.0.0.1')
 const USER_EMAIL = process.env.BBQ_USER_EMAIL || 'sagirodin@gmail.com'
 const USER_PASSWORD = process.env.BBQ_USER_PASSWORD || 'Ember&Oak-2417'
 const SECRET = process.env.BBQ_SECRET || 'dev-secret-not-for-prod'
+const SUPABASE_URL = process.env.SUPABASE_URL || ''
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || ''
 const TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 30 // 30 days
 
 function sign(payload) {
@@ -61,7 +63,8 @@ async function main() {
   app.use(compression())
   app.use(express.json({ limit: '1mb' }))
 
-  // ---- auth ----
+  // ---- auth (Supabase) ----
+  // Legacy HMAC login kept as a fallback when Supabase isn't configured.
   app.post('/api/auth/login', (req, res) => {
     const { email, password } = req.body ?? {}
     if (
@@ -76,12 +79,47 @@ async function main() {
     res.json({ token, email: USER_EMAIL })
   })
 
-  function requireAuth(req, res, next) {
-    const header = req.headers.authorization || ''
-    const payload = verify(header.replace(/^Bearer\s+/i, ''))
-    if (!payload) return res.status(401).json({ error: 'Not signed in' })
-    req.userEmail = payload.email
-    next()
+  // Verify a Supabase access token against the project's /auth/v1/user endpoint,
+  // with a short cache to avoid a network round-trip per request.
+  const tokenCache = new Map() // token -> { email, at }
+  const CACHE_TTL = 60_000
+
+  async function verifySupabase(token) {
+    const hit = tokenCache.get(token)
+    if (hit && Date.now() - hit.at < CACHE_TTL) return hit.email
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null
+    try {
+      const r = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
+      })
+      if (!r.ok) return null
+      const user = await r.json()
+      const email = user?.email || user?.id
+      if (email) {
+        tokenCache.set(token, { email, at: Date.now() })
+        if (tokenCache.size > 500) tokenCache.clear()
+      }
+      return email ?? null
+    } catch {
+      return null
+    }
+  }
+
+  async function requireAuth(req, res, next) {
+    const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '')
+    if (!token) return res.status(401).json({ error: 'Not signed in' })
+    // Supabase tokens first, then legacy HMAC
+    const supaEmail = await verifySupabase(token)
+    if (supaEmail) {
+      req.userEmail = supaEmail
+      return next()
+    }
+    const payload = verify(token)
+    if (payload) {
+      req.userEmail = payload.email
+      return next()
+    }
+    res.status(401).json({ error: 'Not signed in' })
   }
 
   // ---- designs ----

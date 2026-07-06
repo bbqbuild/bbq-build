@@ -1,19 +1,20 @@
 import type { Design, SavedDesign } from '../types'
+import { currentAccessToken, supabase } from './supabase'
 
-const TOKEN_KEY = 'bbq_token'
-const EMAIL_KEY = 'bbq_email'
-
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY)
-}
+/** Cached email of the signed-in user (for display). */
+let cachedEmail: string | null = null
 
 export function getEmail(): string | null {
-  return localStorage.getItem(EMAIL_KEY)
+  return cachedEmail
 }
 
-export function clearSession() {
-  localStorage.removeItem(TOKEN_KEY)
-  localStorage.removeItem(EMAIL_KEY)
+export function setCachedEmail(email: string | null) {
+  cachedEmail = email
+}
+
+export async function clearSession() {
+  await supabase.auth.signOut().catch(() => {})
+  cachedEmail = null
 }
 
 class ApiError extends Error {
@@ -26,11 +27,10 @@ class ApiError extends Error {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(options.headers as Record<string, string>) }
-  const token = getToken()
+  const token = await currentAccessToken()
   if (token) headers.Authorization = `Bearer ${token}`
   const res = await fetch(path, { ...options, headers })
   if (res.status === 401) {
-    clearSession()
     window.dispatchEvent(new Event('bbq:logout'))
     throw new ApiError(401, 'Session expired')
   }
@@ -41,13 +41,23 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>
 }
 
+export interface AuthResult {
+  needsConfirmation: boolean
+}
+
+/** Sign in with email + password via Supabase. */
 export async function login(email: string, password: string): Promise<void> {
-  const { token } = await request<{ token: string }>('/api/auth/login', {
-    method: 'POST',
-    body: JSON.stringify({ email, password }),
-  })
-  localStorage.setItem(TOKEN_KEY, token)
-  localStorage.setItem(EMAIL_KEY, email)
+  const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+  if (error) throw new ApiError(400, error.message)
+  cachedEmail = email.trim()
+}
+
+/** Create a new account. Returns whether email confirmation is required. */
+export async function signup(email: string, password: string): Promise<AuthResult> {
+  const { data, error } = await supabase.auth.signUp({ email: email.trim(), password })
+  if (error) throw new ApiError(400, error.message)
+  cachedEmail = email.trim()
+  return { needsConfirmation: !data.session }
 }
 
 export async function listDesigns(): Promise<SavedDesign[]> {
