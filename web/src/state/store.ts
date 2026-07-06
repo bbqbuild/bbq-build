@@ -4,7 +4,7 @@ import { FRAME_WIDTHS, cornerFor, runsForLayout } from '../types'
 import { getAppliance, fitsFrame, registerCustomAppliances } from '../catalog/appliances'
 import { checkPlacement } from '../catalog/compat'
 import type { ApplianceType } from '../types'
-import { frameSpecByWidth, GROUND_TYPES } from '../catalog/frames'
+import { frameSpecByWidth, GROUND_TYPES, counterMaterial as counterMaterialFor } from '../catalog/frames'
 import { formatLen, type Unit } from '../units'
 
 export function newId(prefix: string): string {
@@ -74,6 +74,8 @@ interface BuilderState {
   setFrameLowered: (id: string, lowered: boolean) => boolean
   setFrameWidth: (id: string, width: number) => void
   setFrameHeight: (id: string, height: number) => void
+  setCounterMaterial: (id: string) => void
+  setAllHeights: (height: number) => void
   setCornerFinish: (side: CornerId, finish: FrameFinish) => void
   setCornerLowered: (side: CornerId, lowered: boolean) => void
   setCorner: (side: CornerId, present: boolean, style?: 'diagonal' | 'square') => void
@@ -289,6 +291,17 @@ export const useStore = create<BuilderState>((set, get) => {
         d.corners = d.corners ?? {}
         d.corners[side] = { ...(d.corners[side] ?? { finish: d.frames[0]?.finish ?? 'graphite' }), style }
       }),
+
+    setCounterMaterial: (id) =>
+      commit((d) => {
+        d.counterMaterial = id
+      }),
+
+    setAllHeights: (height) =>
+      commit((d) => {
+        const h = Math.max(45, Math.min(140, Math.round(height)))
+        for (const f of d.frames) f.height = h
+      }, 'all-heights'),
 
     setCornerFinish: (side, finish) =>
       commit((d) => {
@@ -507,6 +520,13 @@ export function priceBreakdown(design: Design, unit: Unit = 'cm'): { lines: Pric
       unit: price,
       total: price * qty,
     })
+  }
+  // countertop material surcharge over total run length
+  const cmat = counterMaterialFor(design.counterMaterial)
+  const runM = design.frames.reduce((s, f) => s + f.width, 0) / 100
+  if (runM > 0 && cmat.pricePerM > 0) {
+    const total = Math.round(cmat.pricePerM * runM)
+    lines.push({ label: `${cmat.name} counter`, detail: `${formatLen(design.frames.reduce((s,f)=>s+f.width,0), unit)} run`, qty: 1, unit: total, total })
   }
   const corners = (['left', 'right'] as const).filter((s) => cornerFor(design, s)).length
   if (corners) {

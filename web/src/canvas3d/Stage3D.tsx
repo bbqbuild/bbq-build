@@ -322,7 +322,7 @@ export function Stage3D() {
         else if (ud.kind === 'ground') s.select({ kind: 'ground' })
         else if (ud.kind === 'frame') s.select({ kind: 'frame', id: ud.id })
         else if (ud.kind === 'appliance') s.select({ kind: 'appliance', id: ud.id })
-        else if (ud.kind === 'counter') s.select({ kind: 'none' })
+        else if (ud.kind === 'counter') s.select({ kind: 'counter' })
       }
       downPos = null
     }
@@ -528,11 +528,18 @@ export function Stage3D() {
           if (p.kind === 'hingeY') p.obj.rotation.y = p.amount * openT
           else if (p.kind === 'liftX') p.obj.rotation.x = p.amount * openT
           else if (p.kind === 'slideZ') p.obj.position.z = p.base + p.amount * openT
+          else if (p.kind === 'liftY') p.obj.position.y = p.base + p.amount * openT
         }
       }
 
       // selection helper box
-      if (kitchen && (s.selection.kind === 'frame' || s.selection.kind === 'appliance' || s.selection.kind === 'corner')) {
+      if (kitchen && s.selection.kind === 'counter') {
+        const box = new THREE.Box3()
+        let found = false
+        kitchen.group.traverse((o) => { if (o.userData.kind === 'counter') { box.union(new THREE.Box3().setFromObject(o)); found = true } })
+        selectBox.visible = found
+        if (found) (selectBox.box as THREE.Box3).copy(box.expandByScalar(1))
+      } else if (kitchen && (s.selection.kind === 'frame' || s.selection.kind === 'appliance' || s.selection.kind === 'corner')) {
         const id = s.selection.id
         const kind = s.selection.kind
         const box = new THREE.Box3()

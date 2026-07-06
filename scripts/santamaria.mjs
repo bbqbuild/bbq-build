@@ -1,0 +1,12 @@
+import { launch3d } from './_helper.mjs'
+const { browser, page: p } = await launch3d()
+await p.goto('http://127.0.0.1:3000')
+await p.evaluate(()=>{localStorage.clear(); localStorage.setItem('bbq_view','3d')})
+await p.reload()
+await p.waitForSelector('.landing'); await p.click('.landing-cta'); await p.waitForSelector('.topbar')
+await p.evaluate(()=>{ const s=window.__bbq(); const f=s.addFrame(90); s.placeAppliance(f,'santamaria-90') })
+await p.waitForTimeout(700); await p.keyboard.press('f'); await p.waitForTimeout(500)
+const c = await p.locator('.stage3d canvas').boundingBox()
+await p.mouse.move(c.x+c.width/2, c.y+c.height/2); await p.mouse.wheel(0,-350); await p.waitForTimeout(400)
+await p.screenshot({ path:'screenshots/santamaria-3d.png', clip:{x:300,y:100,width:1100,height:640} })
+await browser.close()

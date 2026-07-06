@@ -70,6 +70,8 @@ export interface Design {
   appliances: PlacedAppliance[]
   /** Corner units per side. Missing key → default corner for active wings; explicit null → removed. */
   corners?: Partial<Record<CornerId, Corner | null>>
+  /** countertop material id (see COUNTER_MATERIALS). Default white quartz. */
+  counterMaterial?: string
   /** AI-sourced real products added to this design's catalog. */
   custom?: ApplianceType[]
 }
@@ -145,6 +147,7 @@ export type Selection =
   | { kind: 'frame'; id: string }
   | { kind: 'appliance'; id: string }
   | { kind: 'corner'; id: CornerId }
+  | { kind: 'counter' }
 
 export const FRAME_WIDTHS: FrameWidth[] = [40, 60, 80, 90]
 

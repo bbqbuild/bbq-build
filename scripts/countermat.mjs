@@ -1,0 +1,25 @@
+import { launch3d } from './_helper.mjs'
+const { browser, page: p } = await launch3d()
+let fail=0; const check=(n,c)=>{console.log(`${c?'PASS':'FAIL'}  ${n}`); if(!c)fail++}
+await p.goto('http://127.0.0.1:3000')
+await p.evaluate(()=>{localStorage.clear(); localStorage.setItem('bbq_view','3d')})
+await p.reload()
+await p.waitForSelector('.landing'); await p.click('.landing-cta'); await p.waitForSelector('.topbar')
+await p.evaluate(()=>{ const s=window.__bbq(); s.addFrame(90); s.addFrame(60) })
+await p.waitForTimeout(300)
+// select counter via store, change material
+await p.evaluate(()=>window.__bbq().select({kind:'counter'}))
+await p.waitForTimeout(200)
+check('counter panel shows', (await p.$eval('.panel h2', e=>e.textContent))?.includes('Countertop'))
+check('material swatches present', (await p.$$('.counter-mat')).length===6)
+await p.click('.counter-mat:has-text("Black Granite")')
+await p.waitForTimeout(200)
+check('material set to black granite', await p.evaluate(()=>window.__bbq().design.counterMaterial)==='granite-black')
+// global height
+await p.evaluate(()=>window.__bbq().setAllHeights(100))
+await p.waitForTimeout(200)
+check('all frames height 100', await p.evaluate(()=>window.__bbq().design.frames.every(f=>f.height===100)))
+await p.keyboard.press('f'); await p.waitForTimeout(500)
+await p.screenshot({ path:'screenshots/countermat.png', clip:{x:200,y:60,width:1300,height:700} })
+console.log(fail?`\n${fail} FAILURES`:'\nALL PASS')
+await browser.close(); process.exit(fail?1:0)

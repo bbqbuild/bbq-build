@@ -7,6 +7,7 @@ import { computeScene, type SceneLayout3 } from '../canvas/scene'
 import type { Design, RunId } from '../types'
 import { COUNTER_OVERHANG, COUNTER_T, GROUND_T, RUN_DEPTH, cornerFor, frameBodyH } from '../types'
 import { FINISH_COLORS, frameFrontTexture, groundTopTexture, labelSprite } from './textures'
+import { counterMaterial } from '../catalog/frames'
 import { baseAppliance3d, topAppliance3d, type AnimPart } from './appliances3d'
 import { formatLenBare, type Unit } from '../units'
 
@@ -34,8 +35,7 @@ export interface Kitchen3D {
   radius: number
 }
 
-const counterMat = new THREE.MeshStandardMaterial({ color: '#d8d2c4', roughness: 0.55, metalness: 0.05 })
-const counterEdgeMat = new THREE.MeshStandardMaterial({ color: '#c4bdae', roughness: 0.6 })
+// counter materials are built per-design from design.counterMaterial
 const steelMat = new THREE.MeshStandardMaterial({ color: '#aab1b8', roughness: 0.35, metalness: 0.75 })
 const darkMat = new THREE.MeshStandardMaterial({ color: '#2b2f34', roughness: 0.7, metalness: 0.3 })
 
@@ -49,6 +49,9 @@ function finishMat(finish: keyof typeof FINISH_COLORS): THREE.MeshStandardMateri
 
 export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kitchen3D {
   const scene2d = computeScene(design)
+  const cm = counterMaterial(design.counterMaterial)
+  const counterMat = new THREE.MeshStandardMaterial({ color: cm.color, roughness: cm.roughness, metalness: 0.05 })
+  const counterEdgeMat = new THREE.MeshStandardMaterial({ color: cm.edge, roughness: cm.roughness + 0.1 })
   const group = new THREE.Group()
   const islandGroup = new THREE.Group()
   group.add(islandGroup)

@@ -9,6 +9,7 @@ import { renderElevation, drawBlankFront, type ElevationState } from './elevatio
 import type { Rect } from './layout'
 import { KX, KZ, faceTransform, project } from './projection'
 import { ELEV_TOP, computeScene, type CounterTop, type RunScene, type SceneLayout3 } from './scene'
+import { counterMaterial } from '../catalog/frames'
 import { formatLen, type Unit } from '../units'
 
 export interface Camera {
@@ -343,9 +344,10 @@ function drawRun(ctx: Ctx, s: RenderState, run: RunScene, pxPerCm: number) {
 function drawCounterTop(ctx: Ctx, s: RenderState, top: CounterTop) {
   ctx.save()
   planTransform(ctx, top.y, top.mirror)
+  const mat = counterMaterial(s.design.counterMaterial)
   const g = ctx.createLinearGradient(0, top.z, 0, top.z + top.d)
-  g.addColorStop(0, '#cfc9bb')
-  g.addColorStop(1, '#e8e3d8')
+  g.addColorStop(0, mat.edge)
+  g.addColorStop(1, mat.color)
   ctx.fillStyle = g
   ctx.fillRect(top.x, top.z, top.w, top.d)
   ctx.strokeStyle = 'rgba(90,80,60,0.25)'

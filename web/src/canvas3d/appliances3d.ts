@@ -10,7 +10,7 @@ import { TOP_HEIGHTS } from '../canvas/layout'
 export interface AnimPart {
   /** object whose transform is driven by the open factor */
   obj: THREE.Object3D
-  kind: 'hingeY' | 'slideZ' | 'liftX'
+  kind: 'hingeY' | 'slideZ' | 'liftX' | 'liftY'
   /** target at fully-open: radians for hinge/lift, cm for slide */
   amount: number
   base: number
@@ -301,7 +301,58 @@ export function topAppliance3d(placed: PlacedAppliance, type: ApplianceType, fra
     return { meshes, parts }
   }
 
-  // ---- grill / santa maria: body with a lifting hood ----
+  // ---- santa maria: open Argentine grill (posts, crank wheel, raised grate, coals) ----
+  if (base.startsWith('santamaria')) {
+    const g = new THREE.Group()
+    const fireH = 14
+    // firebox with glowing coals
+    const box = new THREE.Mesh(new THREE.BoxGeometry(w, fireH, depth), steel(0.4))
+    box.position.set(0, counterTop + fireH / 2, 0)
+    g.add(box)
+    const coals = new THREE.Mesh(
+      new THREE.BoxGeometry(w - 8, 3, depth - 8),
+      new THREE.MeshStandardMaterial({ color: '#c2410c', emissive: '#ff7a1a', emissiveIntensity: 0.85, roughness: 0.9 }),
+    )
+    coals.position.set(0, counterTop + fireH - 1.5, 0)
+    g.add(coals)
+    // two side posts
+    const postMat = new THREE.MeshStandardMaterial({ color: '#3d434a', roughness: 0.6, metalness: 0.5 })
+    const postH = h - fireH
+    for (const sx of [-w / 2 + 3, w / 2 - 3]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(3, postH, 3), postMat)
+      post.position.set(sx, counterTop + fireH + postH / 2, -depth / 2 + 3)
+      post.castShadow = true
+      g.add(post)
+    }
+    // crossbar
+    const cross = new THREE.Mesh(new THREE.BoxGeometry(w, 3, 3), postMat)
+    cross.position.set(0, counterTop + h - 1.5, -depth / 2 + 3)
+    g.add(cross)
+    // crank wheel on the right post
+    const wheel = new THREE.Mesh(new THREE.TorusGeometry(5, 1, 8, 20), steel(0.35))
+    wheel.position.set(w / 2 - 3, counterTop + fireH + postH * 0.5, -depth / 2 + 6)
+    g.add(wheel)
+    // raised grate on chains (liftable)
+    const gratePivot = new THREE.Group()
+    const grate = new THREE.Mesh(new THREE.BoxGeometry(w - 8, 1.5, depth - 6), new THREE.MeshStandardMaterial({ color: '#2a2d31', roughness: 0.4, metalness: 0.6 }))
+    grate.castShadow = true
+    gratePivot.add(grate)
+    for (const sx of [-w / 2 + 6, w / 2 - 6]) {
+      const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, postH * 0.5, 6), postMat)
+      chain.position.set(sx, postH * 0.25, -depth / 2 + 4)
+      gratePivot.add(chain)
+    }
+    const grateY = counterTop + fireH + postH * 0.4
+    gratePivot.position.set(0, grateY, 0)
+    g.add(gratePivot)
+    tag(g)
+    meshes.push(g)
+    // "open" raises the grate up the posts
+    parts.push({ obj: gratePivot, kind: 'liftY', amount: postH * 0.45, base: grateY })
+    return { meshes, parts }
+  }
+
+  // ---- grill: body with a lifting hood ----
   const g = new THREE.Group()
   const bandH = 10
   const band = new THREE.Mesh(new THREE.BoxGeometry(w, bandH, depth), steel(0.4))

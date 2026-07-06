@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { APPLIANCES, fitsFrame, getAppliance } from '../catalog/appliances'
 import { checkPlacement } from '../catalog/compat'
-import { FINISHES, frameSpecByWidth, GROUND_TYPES } from '../catalog/frames'
+import { COUNTER_MATERIALS, FINISHES, counterMaterial, frameSpecByWidth, GROUND_TYPES } from '../catalog/frames'
 import { applianceForZone, formatPrice, priceBreakdown, useStore } from '../state/store'
 import { formatLen } from '../units'
 import { useToasts } from './toast'
@@ -22,6 +22,8 @@ export function Inspector() {
     content = placed ? <AppliancePanel placedId={placed.id} /> : <SummaryPanel />
   } else if (selection.kind === 'corner') {
     content = <CornerPanel side={selection.id} />
+  } else if (selection.kind === 'counter') {
+    content = <CounterPanel />
   } else if (selection.kind === 'ground') {
     content = <GroundPanel />
   } else {
@@ -263,6 +265,55 @@ function SlotEditor({ frame, zone, title }: { frame: Frame; zone: Zone; title: s
         </button>
       )}
     </section>
+  )
+}
+
+function CounterPanel() {
+  const design = useStore((s) => s.design)
+  const unit = useStore((s) => s.unit)
+  const setCounterMaterial = useStore((s) => s.setCounterMaterial)
+  const setAllHeights = useStore((s) => s.setAllHeights)
+  const current = counterMaterial(design.counterMaterial)
+  // representative height: the most common frame height (or default)
+  const heights = design.frames.map((f) => frameBodyH(f))
+  const repH = heights.length ? Math.round(heights.reduce((a, b) => a + b, 0) / heights.length) : 88
+
+  return (
+    <div className="panel">
+      <h2>
+        Countertop <span className="h-hint">whole run</span>
+      </h2>
+      <h3>Material</h3>
+      <div className="counter-mats">
+        {COUNTER_MATERIALS.map((m) => (
+          <button
+            key={m.id}
+            className={`counter-mat ${current.id === m.id ? 'active' : ''}`}
+            onClick={() => setCounterMaterial(m.id)}
+            title={`${m.name} · +${formatPrice(m.pricePerM)}/m`}
+          >
+            <span className="counter-swatch" style={{ background: m.color }} />
+            {m.name}
+          </button>
+        ))}
+      </div>
+      {design.frames.length > 0 && (
+        <>
+          <h3>Counter height <span className="h-hint">all frames</span></h3>
+          <SizeRow
+            label="Height"
+            cm={repH}
+            unit={unit}
+            min={MIN_FRAME_H}
+            max={MAX_FRAME_H}
+            inchesOnly
+            onSlide={(v) => setAllHeights(v)}
+            onCommit={(v) => setAllHeights(v)}
+          />
+          <p className="hint">Sets every frame at once. Select a single frame to fine-tune just that one.</p>
+        </>
+      )}
+    </div>
   )
 }
 
