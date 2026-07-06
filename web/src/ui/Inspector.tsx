@@ -5,7 +5,8 @@ import { COUNTER_MATERIALS, FINISHES, counterMaterial, frameSpecByWidth, GROUND_
 import { applianceForZone, formatPrice, priceBreakdown, useStore } from '../state/store'
 import { formatLen } from '../units'
 import { useToasts } from './toast'
-import { MAX_FRAME_H, MIN_FRAME_H, RUN_NAMES, cornerFor, frameBodyH } from '../types'
+import { MAX_FRAME_H, MIN_FRAME_H, RUN_DEPTH, RUN_NAMES, cornerFor, frameBodyH } from '../types'
+import { TOP_HEIGHTS } from '../canvas/layout'
 import { SizeRow } from './SizeRow'
 import type { ApplianceType, Frame, Zone } from '../types'
 
@@ -436,11 +437,24 @@ function AppliancePanel({ placedId }: { placedId: string }) {
   const removeAppliance = useStore((s) => s.removeAppliance)
   const flipAppliance = useStore((s) => s.flipAppliance)
   const select = useStore((s) => s.select)
+  const unit = useStore((s) => s.unit)
   const placed = design.appliances.find((a) => a.id === placedId)!
   const type: ApplianceType = getAppliance(placed.typeId)
   const frameIdx = design.frames.findIndex((f) => f.id === placed.frameId)
+  const frame = design.frames[frameIdx]
   // single-door units can flip their hinge side
   const canFlip = /^(door-40|fridge|kegerator|icemaker)/.test(type.paintAs ?? type.id)
+
+  // installed footprint: module width × counter depth, plus height for units
+  // that stand above the counter (kamados, ovens, drop-in grills)
+  const w = frame?.width ?? type.minFrameWidth
+  const h =
+    placed.zone === 'top'
+      ? TOP_HEIGHTS[type.id] ?? (type.paintAs ? TOP_HEIGHTS[type.paintAs] : undefined)
+      : frame
+        ? frameBodyH(frame)
+        : undefined
+  const size = `${formatLen(w, unit)} W × ${formatLen(RUN_DEPTH, unit)} D${h ? ` × ${formatLen(h, unit)} H` : ''}`
 
   return (
     <div className="panel">
@@ -462,6 +476,10 @@ function AppliancePanel({ placedId }: { placedId: string }) {
           <dd>
             Frame {frameIdx + 1} · {placed.zone === 'top' ? 'counter' : 'under counter'}
           </dd>
+        </div>
+        <div>
+          <dt>Size</dt>
+          <dd>{size}</dd>
         </div>
         <div>
           <dt>Price</dt>
