@@ -4,7 +4,7 @@ import { toApplianceType, type AiProduct } from '../catalog/aiProducts'
 import { checkPlacement } from '../catalog/compat'
 import { FINISHES, FRAME_SPECS, GROUND_TYPES } from '../catalog/frames'
 import { aiSearchAppliances } from '../auth/api'
-import { groundDepth, type LayoutShape } from '../types'
+import { groundDepth, runsForLayout, type RunId } from '../types'
 import { formatPrice, useStore } from '../state/store'
 import { formatLen } from '../units'
 import { SizeRow } from './SizeRow'
@@ -30,32 +30,56 @@ export function Sidebar() {
   )
 }
 
-const LAYOUTS: { id: LayoutShape; name: string; glyph: string }[] = [
-  { id: 'straight', name: 'Straight', glyph: '▬' },
-  { id: 'l-left', name: 'L left', glyph: '⌐' },
-  { id: 'l-right', name: 'L right', glyph: '¬' },
-  { id: 'u', name: 'U shape', glyph: '⊓' },
-]
+function RunPills() {
+  const design = useStore((s) => s.design)
+  const activeRun = useStore((s) => s.activeRun)
+  const setActiveRun = useStore((s) => s.setActiveRun)
+  const runs = runsForLayout(design.layout)
+  const available: RunId[] = [...runs, ...(design.island ? (['island'] as RunId[]) : [])]
+  const label: Record<string, string> = { back: 'Main', left: 'Left', right: 'Right', island: 'Island' }
+  return (
+    <div className="run-pills">
+      {available.map((r) => (
+        <button key={r} className={`run-pill ${activeRun === r ? 'active' : ''}`} onClick={() => setActiveRun(r)}>
+          {label[r]}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 function BuildTab() {
   const ground = useStore((s) => s.design.ground)
   const frames = useStore((s) => s.design.frames)
-  const layout = useStore((s) => s.design.layout ?? 'straight')
   const island = useStore((s) => Boolean(s.design.island))
+  const activeRun = useStore((s) => s.activeRun)
+  const layout = useStore((s) => s.design.layout ?? 'straight')
   const setGround = useStore((s) => s.setGround)
-  const setLayout = useStore((s) => s.setLayout)
   const setIsland = useStore((s) => s.setIsland)
   const addFrame = useStore((s) => s.addFrame)
+  const addCornerUnit = useStore((s) => s.addCornerUnit)
   const setAllFinishes = useStore((s) => s.setAllFinishes)
   const setDragging = useStore((s) => s.setDragging)
   const unit = useStore((s) => s.unit)
+  const push = useToasts((s) => s.push)
   const [width, setWidth] = useState(ground.width)
   const [depth, setDepth] = useState(groundDepth(ground))
+
+  const cornersFull = layout === 'u'
+  const runLabel = { back: 'main run', left: 'left wing', right: 'right wing', island: 'island' }[activeRun]
+
+  const addCorner = (style: 'diagonal' | 'square') => {
+    const wing = addCornerUnit(style)
+    if (!wing) push('Both corners are already in place — remove one to change it', 'info')
+    else push(`Corner added — new frames go to the ${wing} wing`, 'success')
+  }
 
   return (
     <div className="sidebar-body">
       <section>
-        <h3>Frames</h3>
+        <h3>
+          Frames <span className="h-hint">adding to {runLabel}</span>
+        </h3>
         <p className="hint">Click to add, or drag onto the canvas to choose the position.</p>
         <div className="frame-cards">
           {FRAME_SPECS.map((f) => (
@@ -69,7 +93,7 @@ function BuildTab() {
                 e.dataTransfer.setData('text/plain', `frame:${f.width}`)
               }}
               onDragEnd={() => setDragging(null)}
-              onClick={() => addFrame(f.width)}
+              onClick={() => addFrame(f.width, undefined, false, activeRun)}
               role="button"
               title={`Add ${f.name}`}
             >
@@ -91,7 +115,7 @@ function BuildTab() {
               e.dataTransfer.setData('text/plain', 'frame:80:lowered')
             }}
             onDragEnd={() => setDragging(null)}
-            onClick={() => addFrame(80, undefined, true)}
+            onClick={() => addFrame(80, undefined, true, activeRun)}
             role="button"
             title="Lowered table for kamado smokers (Big Green Egg, Primo)"
           >
@@ -103,7 +127,42 @@ function BuildTab() {
               <span>{formatPrice(340)}</span>
             </div>
           </div>
+          <div
+            className="frame-card frame-card-custom"
+            onClick={() => addFrame(70, undefined, false, activeRun)}
+            role="button"
+            title="Add a frame, then set any width & height in the inspector"
+          >
+            <div className="frame-card-visual">
+              <div className="frame-card-box frame-card-box-custom">✎</div>
+            </div>
+            <div className="frame-card-meta">
+              <strong>Custom</strong>
+              <span>any size</span>
+            </div>
+          </div>
         </div>
+      </section>
+
+      <section>
+        <h3>Corners <span className="h-hint">turn the counter 90°</span></h3>
+        <p className="hint">Add a corner to start a wing. New frames then flow into that wing.</p>
+        <div className="corner-cards">
+          <button className="corner-card" onClick={() => addCorner('diagonal')} disabled={cornersFull}>
+            <span className="corner-glyph corner-diag" />
+            Diagonal
+          </button>
+          <button className="corner-card" onClick={() => addCorner('square')} disabled={cornersFull}>
+            <span className="corner-glyph corner-square" />
+            Square
+          </button>
+        </div>
+        {(layout !== 'straight' || island) && (
+          <div className="run-switch">
+            <span>New frames go to:</span>
+            <RunPills />
+          </div>
+        )}
       </section>
 
       {frames.length > 0 && (
@@ -123,21 +182,7 @@ function BuildTab() {
         </section>
       )}
 
-      <CollapsibleSection title="Base & layout" storageKey="bbq_ground_open">
-        <h4 className="sub-h">Shape</h4>
-        <div className="layout-row">
-          {LAYOUTS.map((l) => (
-            <button
-              key={l.id}
-              className={`layout-chip ${layout === l.id ? 'active' : ''}`}
-              onClick={() => setLayout(l.id)}
-              title={l.name}
-            >
-              <span className="layout-glyph">{l.glyph}</span>
-              {l.name}
-            </button>
-          ))}
-        </div>
+      <CollapsibleSection title="Ground & island" storageKey="bbq_ground_open">
         <label className="check-row" title="A freestanding island counter in front of the main run">
           <input type="checkbox" checked={island} onChange={(e) => setIsland(e.target.checked)} />
           <span>Island in front</span>

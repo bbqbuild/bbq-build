@@ -9,6 +9,7 @@ export function SizeRow({
   min,
   max,
   step = 5,
+  inchesOnly = false,
   onSlide,
   onCommit,
 }: {
@@ -18,11 +19,12 @@ export function SizeRow({
   min: number
   max: number
   step?: number
+  inchesOnly?: boolean
   onSlide: (v: number) => void
   onCommit: (v: number) => void
 }) {
   const [text, setText] = useState<string | null>(null)
-  const display = text ?? lenInputValue(cm, unit)
+  const display = text ?? lenInputValue(cm, unit, inchesOnly)
   const commit = (raw: string) => {
     const parsed = parseLen(raw, unit)
     if (parsed !== null) onCommit(Math.max(min, Math.min(max, Math.round(parsed))))
@@ -36,7 +38,7 @@ export function SizeRow({
             className={`size-input ${unit === 'cm' ? '' : 'size-input-wide'}`}
             value={display}
             onChange={(e) => setText(e.target.value)}
-            onFocus={() => setText(lenInputValue(cm, unit))}
+            onFocus={() => setText(lenInputValue(cm, unit, inchesOnly))}
             onBlur={() => {
               if (text !== null) commit(text)
               setText(null)

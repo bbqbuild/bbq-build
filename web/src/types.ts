@@ -21,6 +21,8 @@ export type CornerId = 'left' | 'right'
 export interface Corner {
   finish: FrameFinish
   lowered?: boolean
+  /** diagonal (pentagon, 45° front) or square (box). Default diagonal. */
+  style?: 'diagonal' | 'square'
 }
 
 export type FrameWidth = 40 | 60 | 80 | 90

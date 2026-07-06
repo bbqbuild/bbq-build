@@ -784,6 +784,101 @@ input[type='range'] {
   border-top-color: #b8b1a2;
 }
 
+.frame-card-custom {
+  cursor: pointer;
+}
+
+.frame-card-box-custom {
+  height: 38px;
+  width: 40px !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  font-size: 18px;
+  background: repeating-linear-gradient(135deg, #2a3039 0 6px, #22272f 6px 12px);
+  border: 1px dashed var(--border-light);
+  border-radius: 4px;
+}
+
+.corner-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.corner-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 12px 8px;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+
+.corner-card:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.corner-card:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.corner-glyph {
+  width: 34px;
+  height: 34px;
+  background: linear-gradient(180deg, #565d66, #3a4046);
+  border-top: 4px solid #d9d3c6;
+}
+
+.corner-glyph.corner-square {
+  border-radius: 3px;
+}
+
+.corner-glyph.corner-diag {
+  clip-path: polygon(0 0, 100% 0, 100% 55%, 55% 100%, 0 100%);
+  border-radius: 3px;
+}
+
+.run-switch {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.run-pills {
+  display: flex;
+  gap: 6px;
+  margin-top: 7px;
+  flex-wrap: wrap;
+}
+
+.run-pill {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.run-pill.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
 .layout-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -822,6 +917,29 @@ input[type='range'] {
   color: var(--accent);
   width: 16px;
   text-align: center;
+}
+
+.seg-toggle {
+  display: flex;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+}
+.seg-toggle button {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.seg-toggle button.active {
+  background: var(--panel);
+  color: var(--text);
 }
 
 .check-row {

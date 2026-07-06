@@ -39,17 +39,35 @@ export default function App() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setCachedEmail(data.session?.user?.email ?? null)
-      setAuthed(Boolean(data.session))
-      setRoute(data.session ? 'home' : 'landing')
+      const isAuthed = Boolean(data.session)
+      setAuthed(isAuthed)
+      // restore an in-progress builder session across a refresh
+      const raw = localStorage.getItem('bbq_builder_session')
+      let restored = false
+      if (raw) {
+        try {
+          const sess = JSON.parse(raw)
+          if (sess?.design && (isAuthed || sess.guest)) {
+            useStore.getState().setDesign(sess.design, isAuthed ? (sess.savedId ?? null) : null)
+            setGuest(Boolean(sess.guest) && !isAuthed)
+            setRoute('builder')
+            restored = true
+            requestAnimationFrame(fitView)
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      if (!restored) setRoute(isAuthed ? 'home' : 'landing')
       setReady(true)
     })
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       setCachedEmail(session?.user?.email ?? null)
-      const isAuthed = Boolean(session)
-      setAuthed(isAuthed)
-      if (isAuthed) {
+      // only react to real transitions — ignore INITIAL_SESSION so it can't
+      // clobber a guest-session restore during hydration
+      if (event === 'SIGNED_IN') {
+        setAuthed(true)
         setGuest(false)
-        // if a guest built something, keep it and save it into the new account
         const st = useStore.getState()
         if (st.design.frames.length > 0 && st.savedId === null) {
           setRoute('builder')
@@ -57,7 +75,9 @@ export default function App() {
         } else {
           setRoute('home')
         }
-      } else if (!guest) {
+      } else if (event === 'SIGNED_OUT') {
+        setAuthed(false)
+        setGuest(false)
         setRoute('landing')
       }
     })
@@ -101,6 +121,26 @@ export default function App() {
       requestAnimationFrame(fitView)
     }
   }, [authed, pendingCarry, save, push])
+
+  // persist the builder session (survives F5) — for both guests and signed-in users
+  useEffect(() => {
+    if (route !== 'builder') return
+    const write = () => {
+      const st = useStore.getState()
+      localStorage.setItem('bbq_builder_session', JSON.stringify({ design: st.design, savedId: st.savedId, guest }))
+    }
+    write()
+    const unsub = useStore.subscribe((s, prev) => {
+      if (s.design !== prev.design || s.savedId !== prev.savedId) write()
+    })
+    return unsub
+  }, [route, guest])
+
+  // once away from the builder, drop the persisted session (but not during
+  // initial hydration — that would delete it before we can restore it)
+  useEffect(() => {
+    if (ready && route !== 'builder') localStorage.removeItem('bbq_builder_session')
+  }, [ready, route])
 
   // auto-save: debounce every design change (no manual save needed)
   useEffect(() => {

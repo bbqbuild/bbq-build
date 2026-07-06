@@ -166,6 +166,7 @@ function FramePanel({ frame }: { frame: Frame }) {
         unit={unit}
         min={20}
         max={200}
+        inchesOnly
         onSlide={(v) => setFrameWidth(frame.id, v)}
         onCommit={(v) => setFrameWidth(frame.id, v)}
       />
@@ -175,6 +176,7 @@ function FramePanel({ frame }: { frame: Frame }) {
         unit={unit}
         min={MIN_FRAME_H}
         max={MAX_FRAME_H}
+        inchesOnly
         onSlide={(v) => setFrameHeight(frame.id, v)}
         onCommit={(v) => setFrameHeight(frame.id, v)}
       />
@@ -269,6 +271,8 @@ function CornerPanel({ side }: { side: 'left' | 'right' }) {
   const setCornerFinish = useStore((s) => s.setCornerFinish)
   const setCornerLowered = useStore((s) => s.setCornerLowered)
   const setCorner = useStore((s) => s.setCorner)
+  const setCornerStyle = useStore((s) => s.setCornerStyle)
+  const unit = useStore((s) => s.unit)
   const corner = cornerFor(design, side)
 
   if (!corner) {
@@ -286,7 +290,7 @@ function CornerPanel({ side }: { side: 'left' | 'right' }) {
   return (
     <div className="panel">
       <h2>
-        Corner <span className="h-hint">{side} junction · 60 × 60 cm</span>
+        Corner <span className="h-hint">{side} junction · {formatLen(90, unit)} × {formatLen(90, unit)}</span>
       </h2>
       <div className="finish-row">
         {FINISHES.map((f) => (
@@ -299,13 +303,21 @@ function CornerPanel({ side }: { side: 'left' | 'right' }) {
           />
         ))}
       </div>
+      <div className="seg-toggle">
+        <button className={(corner.style ?? 'diagonal') === 'diagonal' ? 'active' : ''} onClick={() => setCornerStyle(side, 'diagonal')}>
+          Diagonal
+        </button>
+        <button className={corner.style === 'square' ? 'active' : ''} onClick={() => setCornerStyle(side, 'square')}>
+          Square
+        </button>
+      </div>
       <label className="check-row">
         <input type="checkbox" checked={Boolean(corner.lowered)} onChange={(e) => setCornerLowered(side, e.target.checked)} />
         <span>Lowered counter</span>
       </label>
       <dl className="facts">
         <div>
-          <dt>Junction cabinet</dt>
+          <dt>{corner.style === 'square' ? 'Square' : 'Diagonal'} junction</dt>
           <dd>{formatPrice(350)}</dd>
         </div>
       </dl>

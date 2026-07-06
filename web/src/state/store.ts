@@ -67,7 +67,7 @@ interface BuilderState {
   setLayout: (layout: LayoutShape) => void
   setIsland: (island: boolean) => void
   setIslandPos: (x: number, z: number) => void
-  addFrame: (width: FrameWidth, index?: number, lowered?: boolean, run?: RunId) => string
+  addFrame: (width: number, index?: number, lowered?: boolean, run?: RunId) => string
   removeFrame: (id: string) => void
   moveFrame: (id: string, toIndex: number, run?: RunId) => void
   setFrameFinish: (id: string, finish: FrameFinish) => void
@@ -76,7 +76,13 @@ interface BuilderState {
   setFrameHeight: (id: string, height: number) => void
   setCornerFinish: (side: CornerId, finish: FrameFinish) => void
   setCornerLowered: (side: CornerId, lowered: boolean) => void
-  setCorner: (side: CornerId, present: boolean) => void
+  setCorner: (side: CornerId, present: boolean, style?: 'diagonal' | 'square') => void
+  setCornerStyle: (side: CornerId, style: 'diagonal' | 'square') => void
+  /** which run newly-added frames go into (drives shape via corners) */
+  activeRun: RunId
+  setActiveRun: (run: RunId) => void
+  /** add a corner unit that opens a new wing; returns the wing run, or null if full */
+  addCornerUnit: (style: 'diagonal' | 'square') => RunId | null
   setAllFinishes: (finish: FrameFinish) => void
   placeAppliance: (frameId: string, typeId: string) => boolean
   /** Drop an appliance on blank space: auto-create a compatible frame and place it. */
@@ -92,18 +98,29 @@ interface BuilderState {
 const MAX_HISTORY = 100
 
 export const useStore = create<BuilderState>((set, get) => {
+  // Consecutive commits sharing a coalesce key collapse into ONE undo step
+  // (e.g. nudging a frame's height 5× → a single undo reverts all 5).
+  let lastCoalesce: string | null = null
+
   /** Snapshot current design onto the undo stack, then apply a mutation. */
-  function commit(mutate: (d: Design) => void) {
+  function commit(mutate: (d: Design) => void, coalesceKey?: string) {
     const { design, history } = get()
     const before = clone(design)
     const next = clone(design)
     mutate(next)
+    const coalesce = coalesceKey != null && coalesceKey === lastCoalesce
+    lastCoalesce = coalesceKey ?? null
     set({
       design: next,
-      history: [...history.slice(-MAX_HISTORY + 1), before],
+      // when coalescing, keep the existing history top (pre-first-edit state)
+      history: coalesce ? history : [...history.slice(-MAX_HISTORY + 1), before],
       future: [],
       dirty: true,
     })
+  }
+
+  const resetCoalesce = () => {
+    lastCoalesce = null
   }
 
   return {
@@ -123,7 +140,10 @@ export const useStore = create<BuilderState>((set, get) => {
     measuring: false,
     openMode: false,
 
-    select: (selection) => set({ selection }),
+    select: (selection) => {
+      resetCoalesce()
+      set({ selection })
+    },
     toggleView: () =>
       set((s) => {
         const viewMode = s.viewMode === '3d' ? '2d' : '3d'
@@ -164,14 +184,17 @@ export const useStore = create<BuilderState>((set, get) => {
       set({ design: clone(d), savedId, dirty: false, history: [], future: [], selection: { kind: 'none' } })
     },
 
-    setName: (name) => commit((d) => void (d.name = name)),
+    setName: (name) => commit((d) => void (d.name = name), 'name'),
 
     setGround: (patch) =>
-      commit((d) => {
-        if (patch.type) d.ground.type = patch.type
-        if (patch.width !== undefined) d.ground.width = Math.max(100, Math.min(1200, Math.round(patch.width)))
-        if (patch.depth !== undefined) d.ground.depth = Math.max(120, Math.min(1200, Math.round(patch.depth)))
-      }),
+      commit(
+        (d) => {
+          if (patch.type) d.ground.type = patch.type
+          if (patch.width !== undefined) d.ground.width = Math.max(100, Math.min(1200, Math.round(patch.width)))
+          if (patch.depth !== undefined) d.ground.depth = Math.max(120, Math.min(1200, Math.round(patch.depth)))
+        },
+        patch.width !== undefined ? 'ground-w' : patch.depth !== undefined ? 'ground-d' : undefined,
+      ),
 
     setLayout: (layout) =>
       commit((d) => {
@@ -195,7 +218,7 @@ export const useStore = create<BuilderState>((set, get) => {
     setIslandPos: (x, z) =>
       commit((d) => {
         d.islandPos = { x: Math.round(x / 5) * 5, z: Math.round(z / 5) * 5 }
-      }),
+      }, 'island-pos'),
 
     addFrame: (width, index, lowered, run = 'back') => {
       const id = newId('f')
@@ -219,12 +242,52 @@ export const useStore = create<BuilderState>((set, get) => {
       commit((d) => {
         const f = d.frames.find((f) => f.id === id)
         if (f) f.width = Math.max(20, Math.min(200, Math.round(width)))
-      }),
+      }, `fw:${id}`),
 
     setFrameHeight: (id, height) =>
       commit((d) => {
         const f = d.frames.find((f) => f.id === id)
         if (f) f.height = Math.max(45, Math.min(140, Math.round(height)))
+      }, `fh:${id}`),
+
+    activeRun: 'back',
+    setActiveRun: (activeRun) => set({ activeRun }),
+
+    addCornerUnit: (style) => {
+      const { design } = get()
+      const layout = design.layout ?? 'straight'
+      const finish = design.frames[0]?.finish ?? 'graphite'
+      let wing: RunId | null = null
+      let nextLayout: LayoutShape = layout
+      let side: CornerId | null = null
+      if (layout === 'straight') {
+        nextLayout = 'l-right'
+        side = 'right'
+        wing = 'right'
+      } else if (layout === 'l-right') {
+        nextLayout = 'u'
+        side = 'left'
+        wing = 'left'
+      } else if (layout === 'l-left') {
+        nextLayout = 'u'
+        side = 'right'
+        wing = 'right'
+      } else {
+        return null // U already has both corners
+      }
+      commit((d) => {
+        d.layout = nextLayout
+        d.corners = d.corners ?? {}
+        d.corners[side!] = { finish, style }
+      })
+      set({ activeRun: wing })
+      return wing
+    },
+
+    setCornerStyle: (side, style) =>
+      commit((d) => {
+        d.corners = d.corners ?? {}
+        d.corners[side] = { ...(d.corners[side] ?? { finish: d.frames[0]?.finish ?? 'graphite' }), style }
       }),
 
     setCornerFinish: (side, finish) =>
@@ -240,10 +303,10 @@ export const useStore = create<BuilderState>((set, get) => {
         d.corners[side] = { ...cur, lowered }
       }),
 
-    setCorner: (side, present) => {
+    setCorner: (side, present, style = 'diagonal') => {
       commit((d) => {
         d.corners = d.corners ?? {}
-        d.corners[side] = present ? { finish: d.frames[0]?.finish ?? 'graphite' } : null
+        d.corners[side] = present ? { finish: d.frames[0]?.finish ?? 'graphite', style } : null
       })
       set({ selection: present ? { kind: 'corner', id: side } : { kind: 'none' } })
     },
@@ -356,6 +419,7 @@ export const useStore = create<BuilderState>((set, get) => {
     markSaved: (savedId) => set({ savedId, dirty: false }),
 
     undo: () => {
+      resetCoalesce()
       const { history, future, design } = get()
       if (!history.length) return
       const prev = history[history.length - 1]
@@ -369,6 +433,7 @@ export const useStore = create<BuilderState>((set, get) => {
     },
 
     redo: () => {
+      resetCoalesce()
       const { history, future, design } = get()
       if (!future.length) return
       const [next, ...rest] = future
@@ -447,7 +512,7 @@ export function priceBreakdown(design: Design, unit: Unit = 'cm'): { lines: Pric
   if (corners) {
     lines.push({
       label: 'Corner unit',
-      detail: '60 × 60 cm junction cabinet',
+      detail: `${formatLen(90, unit)} diagonal junction cabinet`,
       qty: corners,
       unit: 350,
       total: 350 * corners,

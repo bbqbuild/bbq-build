@@ -189,7 +189,9 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
         new THREE.BoxGeometry(seg.w, COUNTER_T, RUN_DEPTH + COUNTER_OVERHANG * 2),
         [ce, ce, counterMat.clone(), ce, ce, ce],
       )
-      cbox.position.copy(basis.pos(seg.x + seg.w / 2, -seg.y + COUNTER_T / 2))
+      // -seg.y is the counter TOP surface height; center the slab just below it
+      // so it sits ON the cabinet (and flush with the corner counter)
+      cbox.position.copy(basis.pos(seg.x + seg.w / 2, -seg.y - COUNTER_T / 2))
       cbox.rotation.y = basis.rotY
       cbox.castShadow = true
       cbox.receiveShadow = true
@@ -248,14 +250,33 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
       mesh.receiveShadow = true
       return mesh
     }
-    const body = mkPent(bodyH, 0, finishMat(corner.finish))
-    body.userData = { kind: 'corner', id: side }
-    group.add(body)
-    pickables.push(body)
-    const top = mkPent(COUNTER_T, bodyH, counterMat.clone(), COUNTER_OVERHANG)
-    top.userData = { kind: 'corner', id: side }
-    group.add(top)
-    pickables.push(top)
+    if (corner.style === 'square') {
+      // plain box corner (90×90)
+      const cbody = new THREE.Mesh(new THREE.BoxGeometry(CN, bodyH, CN), finishMat(corner.finish))
+      cbody.position.set(x + CN / 2, bodyH / 2, CN / 2)
+      cbody.castShadow = true
+      cbody.receiveShadow = true
+      cbody.userData = { kind: 'corner', id: side }
+      group.add(cbody)
+      pickables.push(cbody)
+      const ctop = new THREE.Mesh(
+        new THREE.BoxGeometry(CN + COUNTER_OVERHANG, COUNTER_T, CN + COUNTER_OVERHANG),
+        counterMat.clone(),
+      )
+      ctop.position.set(x + CN / 2, bodyH + COUNTER_T / 2, CN / 2)
+      ctop.userData = { kind: 'corner', id: side }
+      group.add(ctop)
+      pickables.push(ctop)
+    } else {
+      const body = mkPent(bodyH, 0, finishMat(corner.finish))
+      body.userData = { kind: 'corner', id: side }
+      group.add(body)
+      pickables.push(body)
+      const top = mkPent(COUNTER_T, bodyH, counterMat.clone(), COUNTER_OVERHANG)
+      top.userData = { kind: 'corner', id: side }
+      group.add(top)
+      pickables.push(top)
+    }
   }
 
   // ---- ground dimension lines (measures on the canvas) ----

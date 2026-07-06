@@ -30,9 +30,13 @@ export function formatLenBare(cm: number, unit: Unit): string {
   return unit === 'cm' ? String(cm) : formatLen(cm, unit)
 }
 
-/** Value for a text input: cm as a plain number, imperial as feet'inches (e.g. 11'10). */
-export function lenInputValue(cm: number, unit: Unit): string {
+/**
+ * Value for a text input: cm as a plain number, imperial as feet'inches (e.g. 11'10).
+ * `inchesOnly` shows plain inches for small dimensions (cabinet widths/heights).
+ */
+export function lenInputValue(cm: number, unit: Unit, inchesOnly = false): string {
   if (unit === 'cm') return String(Math.round(cm))
+  if (inchesOnly) return `${Math.round(cm / 2.54)}"`
   const totalIn = cm / 2.54
   const ft = Math.floor(totalIn / 12)
   const inch = Math.round(totalIn - ft * 12)
