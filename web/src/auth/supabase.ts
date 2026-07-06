@@ -8,6 +8,11 @@ export const supabase = createClient(url, anonKey, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
 })
 
+// Exposed for the QA harness (scripts/*) to simulate auth events on refocus.
+if (typeof window !== 'undefined') {
+  ;(window as unknown as { __sb: typeof supabase }).__sb = supabase
+}
+
 export async function currentAccessToken(): Promise<string | null> {
   const { data } = await supabase.auth.getSession()
   return data.session?.access_token ?? null

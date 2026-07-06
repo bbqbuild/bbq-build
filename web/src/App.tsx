@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { clearSession, createDesign, setCachedEmail, updateDesign } from './auth/api'
 import { supabase } from './auth/supabase'
 import { Login } from './auth/Login'
@@ -38,6 +38,11 @@ export default function App() {
   const [saving, setSaving] = useState(false)
   const viewMode = useStore((s) => s.viewMode)
   const push = useToasts((s) => s.push)
+  // mirrors `authed` for use inside the auth listener closure without stale reads
+  const authedRef = useRef(false)
+  useEffect(() => {
+    authedRef.current = authed
+  }, [authed])
 
   // hydrate + track Supabase auth session
   useEffect(() => {
@@ -68,8 +73,11 @@ export default function App() {
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       setCachedEmail(session?.user?.email ?? null)
       // only react to real transitions — ignore INITIAL_SESSION so it can't
-      // clobber a guest-session restore during hydration
+      // clobber a guest-session restore during hydration. Supabase also
+      // re-fires SIGNED_IN on tab refocus / token refresh; if we're already
+      // authed that's NOT a new login, so don't yank the user off their design.
       if (event === 'SIGNED_IN') {
+        if (authedRef.current) return
         setAuthed(true)
         setGuest(false)
         const st = useStore.getState()
