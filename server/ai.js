@@ -163,49 +163,105 @@ async function searchAppliances(query) {
 
 // ---------- scan a product URL ----------
 
+// Real browser headers — many retailers (bbqguys, Home Depot, etc.) 403 a
+// bare fetch. This gets us through most of them.
+const BROWSER_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'Cache-Control': 'no-cache',
+  'Sec-Ch-Ua': '"Chromium";v="124", "Not:A-Brand";v="99"',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'none',
+  'Upgrade-Insecure-Requests': '1',
+}
+
+/** Turn a product URL slug into readable words for a fallback search. */
+function slugWords(url) {
+  try {
+    const parts = new URL(url).pathname.split('/').filter((p) => p && !/^\d+$/.test(p) && p.length > 2)
+    return parts.slice(-2).join(' ').replace(/[-_]+/g, ' ').replace(/\.\w+$/, '').trim()
+  } catch {
+    return url
+  }
+}
+
 async function scanUrl(url) {
   let html = ''
+  let fetchErr = ''
   try {
-    const res = await fetch(url, {
-      redirect: 'follow',
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; bbq.build/1.0)' },
-      signal: AbortSignal.timeout(15000),
-    })
-    if (!res.ok) throw new Error(`fetch ${res.status}`)
-    html = await res.text()
+    const res = await fetch(url, { redirect: 'follow', headers: BROWSER_HEADERS, signal: AbortSignal.timeout(15000) })
+    if (!res.ok) fetchErr = `fetch ${res.status}`
+    else html = await res.text()
   } catch (e) {
-    throw Object.assign(new Error(`Couldn't open that URL (${e.message}). Paste a public product page.`), { status: 400 })
+    fetchErr = e.message
   }
+
   const title = (html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || '').trim()
+  let text
+  let sourceNote = ''
 
-  // Structured data first — most retailers (Wayfair, Amazon, etc.) embed the
-  // product's name/brand/price/dimensions in JSON-LD or og:/meta tags. These
-  // carry the real specs; the visible body is mostly nav chrome.
-  const jsonld = [...html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)]
-    .map((m) => m[1].trim())
-    .filter((s) => /"@type"\s*:\s*"?Product/i.test(s) || /"offers"|"price"|"brand"/i.test(s))
-    .join('\n')
-    .slice(0, 5000)
-  const metas = [...html.matchAll(/<meta[^>]+(?:property|name)=["'](og:[^"']+|description|twitter:[^"']+)["'][^>]*content=["']([^"']*)["']/gi)]
-    .map((m) => `${m[1]}: ${m[2]}`)
-    .join('\n')
-    .slice(0, 1500)
-
-  // crude HTML → visible text as a fallback signal
-  const body = html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&[a-z]+;/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .slice(0, 3500)
-  const text = [
-    jsonld && `STRUCTURED DATA (JSON-LD):\n${jsonld}`,
-    metas && `META TAGS:\n${metas}`,
-    `PAGE TEXT:\n${body}`,
-  ]
-    .filter(Boolean)
-    .join('\n\n')
+  if (html) {
+    // Structured data first — most retailers embed the product's
+    // name/brand/price/dimensions in JSON-LD or og:/meta tags. These carry
+    // the real specs; the visible body is mostly nav chrome.
+    const jsonld = [...html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)]
+      .map((m) => m[1].trim())
+      .filter((s) => /"@type"\s*:\s*"?Product/i.test(s) || /"offers"|"price"|"brand"/i.test(s))
+      .join('\n')
+      .slice(0, 5000)
+    const metas = [...html.matchAll(/<meta[^>]+(?:property|name)=["'](og:[^"']+|description|twitter:[^"']+)["'][^>]*content=["']([^"']*)["']/gi)]
+      .map((m) => `${m[1]}: ${m[2]}`)
+      .join('\n')
+      .slice(0, 1500)
+    const body = html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&[a-z]+;/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .slice(0, 3500)
+    text = [
+      jsonld && `STRUCTURED DATA (JSON-LD):\n${jsonld}`,
+      metas && `META TAGS:\n${metas}`,
+      `PAGE TEXT:\n${body}`,
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+  } else {
+    // The site blocked our fetch (403/anti-bot) — fall back to a grounded web
+    // search so we can still identify the product from its URL.
+    const product = slugWords(url)
+    const research = await callGemini({
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text:
+                `Look up the real outdoor-kitchen appliance sold at this product page: ${url}\n` +
+                `The product appears to be: "${product}". ` +
+                `Report the brand, exact model name/number, physical or cut-out width in cm, current US price in USD, ` +
+                `product category, and a one-line description. If the page is unreachable, use the product name to find it.`,
+            },
+          ],
+        },
+      ],
+      tools: [{ google_search: {} }],
+      temperature: 0.2,
+    })
+    if (!research.text) {
+      throw Object.assign(
+        new Error(`Couldn't open that URL (${fetchErr || 'blocked'}) and couldn't find it. Try the manufacturer's page.`),
+        { status: 400 },
+      )
+    }
+    text = `WEB RESEARCH (the retailer page could not be fetched directly):\n${research.text}`
+    sourceNote = ' The page could not be fetched; use the web-research notes below.'
+  }
 
   const structured = await callGemini({
     contents: [
@@ -219,7 +275,7 @@ async function scanUrl(url) {
               `(santamaria = open argentine/gaucho grills, kamado = ceramic eggs/smokers, icebin = drop-in ice bins.) ` +
               `width_cm is the unit's width in centimeters (convert from inches if needed; cut-out width if given, else overall). ` +
               `price_usd is the listed price. blurb is ONE short sentence. ` +
-              `If it's not an outdoor kitchen appliance, set category to "".\n\nTITLE: ${title}\nURL: ${url}\n\n${text}`,
+              `If it's not an outdoor kitchen appliance, set category to "".${sourceNote}\n\nTITLE: ${title}\nURL: ${url}\n\n${text}`,
           },
         ],
       },
