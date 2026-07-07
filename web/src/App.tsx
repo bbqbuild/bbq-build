@@ -18,14 +18,14 @@ import { TopBar } from './ui/TopBar'
 import { ValidateModal } from './ui/ValidateModal'
 import { DropDecisionModal } from './ui/DropDecisionModal'
 import { NewKitchenWizard } from './ui/NewKitchenWizard'
-import { AdminModal } from './ui/AdminModal'
+import { AdminPanel } from './ui/AdminPanel'
 import { useToasts } from './ui/toast'
 import type { Design } from './types'
 import type { SavedDesign } from './types'
 
-type Modal = 'none' | 'presets' | 'spec' | 'designs' | 'validate' | 'admin'
-// landing → public cover; auth → login/signup; home → dashboard; builder → editor
-type Route = 'landing' | 'auth' | 'home' | 'builder'
+type Modal = 'none' | 'presets' | 'spec' | 'designs' | 'validate'
+// landing → public cover; auth → login/signup; home → dashboard; builder → editor; admin → back-office
+type Route = 'landing' | 'auth' | 'home' | 'builder' | 'admin'
 
 export default function App() {
   const [authed, setAuthed] = useState<boolean>(false)
@@ -319,9 +319,17 @@ export default function App() {
           onNew={newDesign}
           onLogout={logout}
           isAdmin={isAdmin}
-          onOpenAdmin={() => setModal('admin')}
+          onOpenAdmin={() => setRoute('admin')}
         />
-        {modal === 'admin' && <AdminModal onClose={() => setModal('none')} />}
+        <Toasts />
+      </>
+    )
+  }
+
+  if (route === 'admin' && isAdmin) {
+    return (
+      <>
+        <AdminPanel onExit={() => setRoute(authed ? 'home' : 'landing')} />
         <Toasts />
       </>
     )
@@ -351,7 +359,7 @@ export default function App() {
         onHome={goHome}
         onLogout={logout}
         isAdmin={isAdmin}
-        onOpenAdmin={() => setModal('admin')}
+        onOpenAdmin={() => setRoute('admin')}
       />
       <div className="workspace">
         <Sidebar />
@@ -363,7 +371,6 @@ export default function App() {
       {modal === 'spec' && <SpecModal onClose={() => setModal('none')} />}
       {modal === 'designs' && <DesignsModal onClose={() => setModal('none')} />}
       {modal === 'validate' && <ValidateModal onClose={() => setModal('none')} />}
-      {modal === 'admin' && <AdminModal onClose={() => setModal('none')} />}
       {wizard && <NewKitchenWizard onDone={finishWizard} onSkip={() => setWizard(false)} onCancel={cancelWizard} />}
       <DropDecisionModal />
       <Toasts />

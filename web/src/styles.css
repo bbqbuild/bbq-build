@@ -2626,3 +2626,37 @@ input[type='range'] {
 
 .island-corner-row { margin-top: 8px; }
 .island-corner-row .btn { width: 100%; }
+
+/* ---------- admin back-office (full page) ---------- */
+.admin-page { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg); z-index: 50; }
+.admin-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.admin-topbar .logo { display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 700; }
+.admin-badge {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent);
+  padding: 3px 8px; border-radius: 6px; margin-left: 4px;
+}
+.admin-layout { flex: 1; display: flex; min-height: 0; }
+.admin-nav {
+  width: 220px; flex-shrink: 0; padding: 16px 12px; border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 4px; background: var(--panel);
+}
+.admin-nav button {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 9px 12px; border-radius: 8px; border: none; background: none;
+  color: var(--text-dim); font-size: 14px; font-weight: 500; cursor: pointer; text-align: left;
+}
+.admin-nav button:hover { background: var(--panel-2); color: var(--text); }
+.admin-nav button.active { background: color-mix(in srgb, var(--accent) 12%, var(--panel-2)); color: var(--accent); }
+.admin-nav-badge {
+  font-size: 11px; font-weight: 700; min-width: 18px; text-align: center;
+  background: var(--panel-2); color: var(--text-dim); border-radius: 9px; padding: 1px 6px;
+}
+.admin-nav button.active .admin-nav-badge { background: var(--accent); color: #1a1205; }
+.admin-content { flex: 1; overflow-y: auto; padding: 24px 32px; max-width: 900px; }
+.admin-content h2 { margin: 0 0 4px; font-size: 22px; }
+.admin-sub { margin: 0 0 18px; color: var(--text-dim); font-size: 13px; }
+.admin-scan { margin-bottom: 18px; }
