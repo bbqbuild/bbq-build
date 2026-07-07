@@ -1,17 +1,23 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { aiValidate, type ValidationReport } from '../auth/api'
 import { catalogSummary } from '../catalog/appliances'
+import { analyzeBuild } from '../catalog/analyze'
 import { useStore } from '../state/store'
+import { useToasts } from './toast'
 
 const SEV_ICON = { error: '⛔', warning: '⚠️', info: 'ℹ️' } as const
 
 export function ValidateModal({ onClose }: { onClose: () => void }) {
   const [report, setReport] = useState<ValidationReport | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const design = useStore((s) => s.design)
+  const push = useToasts((s) => s.push)
+  // instant, deterministic checks that recompute as the design changes
+  const quickFixes = useMemo(() => analyzeBuild(design), [design])
 
   useEffect(() => {
-    const design = useStore.getState().design
-    aiValidate(design, catalogSummary(design.custom ?? []))
+    const d = useStore.getState().design
+    aiValidate(d, catalogSummary(d.custom ?? []))
       .then(setReport)
       .catch((e) => setError(e instanceof Error ? e.message : 'Validation failed'))
   }, [])
@@ -25,6 +31,36 @@ export function ValidateModal({ onClose }: { onClose: () => void }) {
             ✕
           </button>
         </header>
+
+        {quickFixes.length > 0 && (
+          <div className="quickfixes">
+            <h3>Quick fixes</h3>
+            <ul>
+              {quickFixes.map((q) => (
+                <li key={q.id} className={`sev-${q.severity}`}>
+                  <div className="quickfix-text">
+                    <strong>
+                      {SEV_ICON[q.severity]} {q.title}
+                    </strong>
+                    <span>{q.detail}</span>
+                  </div>
+                  {q.fix && (
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => {
+                        q.fix!.run()
+                        push(q.fix!.label, 'success')
+                      }}
+                    >
+                      {q.fix.label}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {!report && !error && (
           <div className="validate-loading">
             <div className="chat-typing">
