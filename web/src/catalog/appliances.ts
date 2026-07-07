@@ -261,10 +261,31 @@ export function registerCustomAppliances(list: ApplianceType[] | undefined) {
   for (const t of list ?? []) customById.set(t.id, t)
 }
 
+/**
+ * Placeholder for an appliance id we can't resolve — e.g. a shared/imported
+ * product that's still pending review or hasn't loaded yet. Returning this
+ * instead of throwing keeps a design renderable (a neutral box) rather than
+ * crashing the whole app on one missing item.
+ */
+function fallbackAppliance(typeId: string): ApplianceType {
+  const zone = /(fridge|kegerator|icemaker|drawers|doors|door|trash|woodstore)/.test(typeId) ? 'base' : 'top'
+  return {
+    id: typeId,
+    name: 'Unavailable appliance',
+    shortName: 'Unavailable',
+    brand: '',
+    zone,
+    mount: zone === 'base' ? 'undercounter' : 'dropin',
+    minFrameWidth: 40,
+    price: 0,
+    description: 'This imported appliance isn’t available right now (pending review or removed).',
+    icon: '❓',
+    custom: true,
+  }
+}
+
 export function getAppliance(typeId: string): ApplianceType {
-  const t = applianceById.get(typeId) ?? customById.get(typeId)
-  if (!t) throw new Error(`Unknown appliance type: ${typeId}`)
-  return t
+  return applianceById.get(typeId) ?? customById.get(typeId) ?? fallbackAppliance(typeId)
 }
 
 export function fitsFrame(type: ApplianceType, frameWidth: number): boolean {
