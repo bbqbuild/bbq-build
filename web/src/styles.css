@@ -2660,3 +2660,39 @@ input[type='range'] {
 .admin-content h2 { margin: 0 0 4px; font-size: 22px; }
 .admin-sub { margin: 0 0 18px; color: var(--text-dim); font-size: 13px; }
 .admin-scan { margin-bottom: 18px; }
+
+/* admin: filter tabs + split list/detail */
+.admin-content-wide { max-width: 1100px; }
+.admin-filter-tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+.admin-filter-tabs button {
+  padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--panel-2); color: var(--text-dim); font-size: 13px; cursor: pointer;
+}
+.admin-filter-tabs button.active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel-2)); }
+.admin-split { display: grid; grid-template-columns: 1fr 340px; gap: 16px; align-items: start; }
+.admin-split .admin-list { max-height: calc(100vh - 260px); overflow-y: auto; }
+.admin-row-click { cursor: pointer; transition: border-color 0.1s, background 0.1s; }
+.admin-row-click:hover { border-color: var(--border-light); }
+.admin-row-click.sel { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--panel-2)); }
+.admin-status { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px; flex-shrink: 0; }
+.admin-status-approved { color: #34d399; background: rgba(52, 211, 153, 0.14); }
+.admin-status-pending { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+
+.admin-detail {
+  position: sticky; top: 0;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 18px;
+}
+.admin-detail-empty { color: var(--text-faint); font-size: 13px; text-align: center; padding: 40px 18px; }
+.admin-detail-head { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
+.appliance-icon.big { font-size: 30px; }
+.admin-detail-head h3 { margin: 0 0 4px; font-size: 16px; }
+.admin-detail-desc { font-size: 13px; color: var(--text-dim); line-height: 1.5; margin: 0 0 14px; }
+.admin-detail-facts { display: flex; flex-direction: column; gap: 0; margin: 0 0 14px; }
+.admin-detail-facts > div { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.admin-detail-facts dt { color: var(--text-faint); margin: 0; }
+.admin-detail-facts dd { margin: 0; text-align: right; }
+.admin-detail-facts dd.accent { color: var(--accent); font-weight: 600; }
+.admin-detail-id { font-size: 11px; color: var(--text-faint); word-break: break-all; }
+.admin-detail-source { width: 100%; margin-bottom: 10px; }
+.admin-detail-actions { display: flex; gap: 8px; }
+.admin-detail-actions .btn { flex: 1; }

@@ -15,22 +15,20 @@ import { toApplianceType } from '../catalog/aiProducts'
 import { formatPrice } from '../state/store'
 import { useToasts } from './toast'
 
-type Page = 'appliances' | 'pending' | 'companies'
+type Section = 'appliances' | 'companies'
 
-/** Full-page back-office for admins: vet imported appliances + manage build companies. */
+/** Full-page back-office for admins. Nav is object-type based; filters live inside a screen. */
 export function AdminPanel({ onExit }: { onExit: () => void }) {
-  const [page, setPage] = useState<Page>('appliances')
+  const [section, setSection] = useState<Section>('appliances')
   const [items, setItems] = useState<AdminAppliance[] | null>(null)
   const loadApps = () => adminListAppliances().then(setItems).catch(() => setItems([]))
   useEffect(() => {
     loadApps()
   }, [])
-  const pending = items?.filter((a) => a.status === 'pending') ?? []
-  const vetted = items?.filter((a) => a.status === 'approved') ?? []
+  const pendingCount = items?.filter((a) => a.status === 'pending').length ?? 0
 
-  const nav: { id: Page; label: string; badge?: number }[] = [
-    { id: 'appliances', label: 'Vetted appliances', badge: vetted.length || undefined },
-    { id: 'pending', label: 'Pending review', badge: pending.length || undefined },
+  const nav: { id: Section; label: string; badge?: number }[] = [
+    { id: 'appliances', label: 'Appliances', badge: pendingCount || undefined },
     { id: 'companies', label: 'Build companies' },
   ]
 
@@ -51,59 +49,34 @@ export function AdminPanel({ onExit }: { onExit: () => void }) {
       <div className="admin-layout">
         <nav className="admin-nav">
           {nav.map((n) => (
-            <button key={n.id} className={page === n.id ? 'active' : ''} onClick={() => setPage(n.id)}>
+            <button key={n.id} className={section === n.id ? 'active' : ''} onClick={() => setSection(n.id)}>
               <span>{n.label}</span>
               {n.badge != null && <span className="admin-nav-badge">{n.badge}</span>}
             </button>
           ))}
         </nav>
-        <main className="admin-content">
-          {page === 'appliances' && <VettedPage items={items} vetted={vetted} reload={loadApps} />}
-          {page === 'pending' && <PendingPage pending={pending} loaded={items != null} reload={loadApps} />}
-          {page === 'companies' && <CompaniesPage />}
+        <main className="admin-content admin-content-wide">
+          {section === 'appliances' && <AppliancesScreen items={items} reload={loadApps} />}
+          {section === 'companies' && <CompaniesScreen />}
         </main>
       </div>
     </div>
   )
 }
 
-function ApplianceRow({ a, onApprove, onReject }: { a: AdminAppliance; onApprove?: () => void; onReject?: () => void }) {
-  return (
-    <li className="admin-row">
-      <span className="appliance-icon">{a.icon}</span>
-      <div className="admin-row-main">
-        <strong>{a.name}</strong>
-        <span className="admin-row-meta">
-          {a.brand} · {a.minFrameWidth} cm · {formatPrice(a.price)}
-          {a.dims ? ` · cutout ${a.dims.w}×${a.dims.h}×${a.dims.d}` : ''}
-          {a.addedBy ? ` · by ${a.addedBy}` : ''}
-        </span>
-        {a.url && (
-          <a className="admin-row-link" href={a.url} target="_blank" rel="noreferrer">
-            source ↗
-          </a>
-        )}
-      </div>
-      <div className="admin-row-actions">
-        {onApprove && (
-          <button className="btn btn-primary btn-sm" onClick={onApprove}>
-            Approve
-          </button>
-        )}
-        {onReject && (
-          <button className="btn btn-danger-ghost btn-sm" onClick={onReject}>
-            {onApprove ? 'Reject' : 'Remove'}
-          </button>
-        )}
-      </div>
-    </li>
-  )
-}
+type Filter = 'all' | 'approved' | 'pending'
 
-function VettedPage({ items, vetted, reload }: { items: AdminAppliance[] | null; vetted: AdminAppliance[]; reload: () => void }) {
+function AppliancesScreen({ items, reload }: { items: AdminAppliance[] | null; reload: () => void }) {
+  const [filter, setFilter] = useState<Filter>('all')
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [url, setUrl] = useState('')
   const [busy, setBusy] = useState(false)
   const push = useToasts((s) => s.push)
+
+  const all = items ?? []
+  const counts = { all: all.length, approved: all.filter((a) => a.status === 'approved').length, pending: all.filter((a) => a.status === 'pending').length }
+  const list = filter === 'all' ? all : all.filter((a) => a.status === filter)
+  const selected = all.find((a) => a.key === selectedKey) ?? null
 
   async function scanAdd(e: React.FormEvent) {
     e.preventDefault()
@@ -114,7 +87,7 @@ function VettedPage({ items, vetted, reload }: { items: AdminAppliance[] | null;
       const type = toApplianceType(item)
       if (typeof type === 'string') push(type, 'error')
       else {
-        await importAppliance(type) // admin → auto-approved
+        await importAppliance(type)
         push(`${type.name} added to the vetted list`, 'success')
         setUrl('')
         reload()
@@ -126,66 +99,114 @@ function VettedPage({ items, vetted, reload }: { items: AdminAppliance[] | null;
     }
   }
 
-  const remove = async (key: string) => {
+  const act = async (fn: () => Promise<void>, msg: string) => {
     try {
-      await adminReject(key)
+      await fn()
+      push(msg, 'success')
       reload()
     } catch (err) {
       push(err instanceof Error ? err.message : 'Failed', 'error')
     }
   }
 
+  const TABS: { id: Filter; label: string }[] = [
+    { id: 'all', label: `All (${counts.all})` },
+    { id: 'approved', label: `Vetted (${counts.approved})` },
+    { id: 'pending', label: `Pending (${counts.pending})` },
+  ]
+
   return (
     <>
-      <h2>Vetted appliances</h2>
-      <p className="admin-sub">Products available to every user. Scan a URL to add one directly.</p>
+      <h2>Appliances</h2>
+      <p className="admin-sub">Scan a URL to add a vetted product, or review user-submitted imports.</p>
       <form className="ai-search-row admin-scan" onSubmit={scanAdd}>
         <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Scan a product URL → add to the vetted list" disabled={busy} />
         <button className="btn btn-primary" type="submit" disabled={busy || !url.trim()}>
           {busy ? '…' : 'Scan & add'}
         </button>
       </form>
-      {!items && <p className="hint">Loading…</p>}
-      {items && (
+      <div className="admin-filter-tabs">
+        {TABS.map((t) => (
+          <button key={t.id} className={filter === t.id ? 'active' : ''} onClick={() => setFilter(t.id)}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="admin-split">
         <ul className="admin-list">
-          {vetted.map((a) => (
-            <ApplianceRow key={a.key} a={a} onReject={() => remove(a.key)} />
+          {!items && <li className="hint">Loading…</li>}
+          {items && !list.length && <li className="hint">Nothing here.</li>}
+          {list.map((a) => (
+            <li
+              key={a.key}
+              className={`admin-row admin-row-click ${a.key === selectedKey ? 'sel' : ''}`}
+              onClick={() => setSelectedKey(a.key)}
+            >
+              <span className="appliance-icon">{a.icon}</span>
+              <div className="admin-row-main">
+                <strong>{a.name}</strong>
+                <span className="admin-row-meta">
+                  {a.brand} · {a.minFrameWidth} cm · {formatPrice(a.price)}
+                </span>
+              </div>
+              <span className={`admin-status admin-status-${a.status}`}>{a.status === 'pending' ? 'Pending' : 'Vetted'}</span>
+            </li>
           ))}
-          {!vetted.length && <li className="hint">No vetted appliances yet.</li>}
         </ul>
-      )}
+
+        {selected ? (
+          <aside className="admin-detail">
+            <div className="admin-detail-head">
+              <span className="appliance-icon big">{selected.icon}</span>
+              <div>
+                <h3>{selected.name}</h3>
+                <span className={`admin-status admin-status-${selected.status}`}>{selected.status === 'pending' ? 'Pending review' : 'Vetted'}</span>
+              </div>
+            </div>
+            <p className="admin-detail-desc">{selected.description}</p>
+            <dl className="admin-detail-facts">
+              <div><dt>Brand</dt><dd>{selected.brand || '—'}</dd></div>
+              <div><dt>Fits frame</dt><dd>{selected.minFrameWidth} cm</dd></div>
+              <div><dt>Zone</dt><dd>{selected.zone === 'base' ? 'Under counter' : 'Counter level'}</dd></div>
+              <div><dt>Mount</dt><dd>{selected.mount}</dd></div>
+              {selected.dims && (
+                <div><dt>Cutout</dt><dd>{selected.dims.w} × {selected.dims.h} × {selected.dims.d} cm</dd></div>
+              )}
+              <div><dt>Price</dt><dd className="accent">{formatPrice(selected.price)}</dd></div>
+              {selected.addedBy && <div><dt>Submitted by</dt><dd>{selected.addedBy}</dd></div>}
+              <div><dt>ID</dt><dd className="admin-detail-id">{selected.key}</dd></div>
+            </dl>
+            {selected.url && (
+              <a className="btn btn-ghost admin-detail-source" href={selected.url} target="_blank" rel="noreferrer">
+                Open source listing ↗
+              </a>
+            )}
+            <div className="admin-detail-actions">
+              {selected.status === 'pending' && (
+                <button className="btn btn-primary" onClick={() => act(() => adminApprove(selected.key), 'Approved — now available to everyone')}>
+                  Approve
+                </button>
+              )}
+              <button
+                className="btn btn-danger-ghost"
+                onClick={() => act(() => adminReject(selected.key).then(() => setSelectedKey(null)), 'Removed')}
+              >
+                {selected.status === 'pending' ? 'Reject' : 'Remove'}
+              </button>
+            </div>
+          </aside>
+        ) : (
+          <aside className="admin-detail admin-detail-empty">
+            <p>Select an appliance to see its full spec.</p>
+          </aside>
+        )}
+      </div>
     </>
   )
 }
 
-function PendingPage({ pending, loaded, reload }: { pending: AdminAppliance[]; loaded: boolean; reload: () => void }) {
-  const push = useToasts((s) => s.push)
-  const act = async (fn: () => Promise<void>) => {
-    try {
-      await fn()
-      reload()
-    } catch (err) {
-      push(err instanceof Error ? err.message : 'Failed', 'error')
-    }
-  }
-  return (
-    <>
-      <h2>Pending review</h2>
-      <p className="admin-sub">User-submitted imports. Approve to publish to everyone, or reject to remove.</p>
-      {!loaded && <p className="hint">Loading…</p>}
-      {loaded && (
-        <ul className="admin-list">
-          {pending.map((a) => (
-            <ApplianceRow key={a.key} a={a} onApprove={() => act(() => adminApprove(a.key))} onReject={() => act(() => adminReject(a.key))} />
-          ))}
-          {!pending.length && <li className="hint">Nothing waiting for review. 🎉</li>}
-        </ul>
-      )}
-    </>
-  )
-}
-
-function CompaniesPage() {
+function CompaniesScreen() {
   const [items, setItems] = useState<Company[] | null>(null)
   const [form, setForm] = useState({ name: '', region: '', url: '', phone: '', email: '', notes: '' })
   const push = useToasts((s) => s.push)
