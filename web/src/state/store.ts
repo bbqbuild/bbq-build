@@ -74,6 +74,7 @@ interface BuilderState {
   toggleOpen: () => void
   flipAppliance: (id: string) => void
   addCustomAppliance: (t: ApplianceType) => void
+  removeCustomAppliance: (id: string) => void
   setDragging: (d: DragPayload | null) => void
   setHoveredFrame: (id: string | null) => void
   toggleDims: () => void
@@ -205,6 +206,15 @@ export const useStore = create<BuilderState>((set, get) => {
       commit((d) => {
         // newest first so a freshly imported product tops the catalog list
         d.custom = [t, ...(d.custom ?? []).filter((c) => c.id !== t.id)]
+      })
+    },
+
+    removeCustomAppliance: (id) => {
+      // drop it from this design's personal catalog list; the shared DB copy
+      // (pending review or already vetted) stays so others can still use it
+      commit((d) => {
+        d.custom = (d.custom ?? []).filter((c) => c.id !== id)
+        d.appliances = d.appliances.filter((a) => a.typeId !== id)
       })
     },
     setDragging: (dragging) => set({ dragging }),

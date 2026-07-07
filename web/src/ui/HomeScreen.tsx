@@ -9,10 +9,12 @@ interface Props {
   onOpen: (d: SavedDesign) => void
   onNew: () => void
   onLogout: () => void
+  isAdmin?: boolean
+  onOpenAdmin?: () => void
 }
 
 /** Post-login dashboard: your designs as cards, plus "new design". */
-export function HomeScreen({ onOpen, onNew, onLogout }: Props) {
+export function HomeScreen({ onOpen, onNew, onLogout, isAdmin, onOpenAdmin }: Props) {
   const [designs, setDesigns] = useState<SavedDesign[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const push = useToasts((s) => s.push)
@@ -49,6 +51,11 @@ export function HomeScreen({ onOpen, onNew, onLogout }: Props) {
           </span>
         </div>
         <div className="home-user">
+          {isAdmin && onOpenAdmin && (
+            <button className="btn btn-ghost" onClick={onOpenAdmin}>
+              ⚙ Admin
+            </button>
+          )}
           <span className="home-email">{getEmail()}</span>
           <button className="btn btn-ghost" onClick={onLogout}>
             Sign out

@@ -122,6 +122,21 @@ async function main() {
     res.status(401).json({ error: 'Not signed in' })
   }
 
+  // Admin allow-list (comma-separated emails in ADMIN_EMAILS; defaults to the owner)
+  const ADMIN_EMAILS = new Set(
+    (process.env.ADMIN_EMAILS || 'sagi@frontegg.com,sagi@qipi.ai')
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean),
+  )
+  const isAdmin = (email) => Boolean(email) && ADMIN_EMAILS.has(email.toLowerCase())
+  async function requireAdmin(req, res, next) {
+    await requireAuth(req, res, () => {
+      if (!isAdmin(req.userEmail)) return res.status(403).json({ error: 'Admin only' })
+      next()
+    })
+  }
+
   // ---- designs ----
   const designRouter = express.Router()
   designRouter.use(requireAuth)
@@ -251,13 +266,63 @@ async function main() {
           ? { dims: { w: Number(t.dims.w) || 0, h: Number(t.dims.h) || 0, d: Number(t.dims.d) || 0 } }
           : {}),
       }
-      const item = await storage.upsertShared(clean.id, clean)
-      res.json({ item })
+      // admins publish straight to the vetted list; everyone else submits for review
+      if (isAdmin(req.userEmail)) await storage.upsertApproved(clean.id, clean, req.userEmail)
+      else await storage.addPending(clean.id, clean, req.userEmail)
+      res.json({ item: clean, status: isAdmin(req.userEmail) ? 'approved' : 'pending' })
     } catch (err) {
       console.error('catalog import error:', err.message)
       res.status(500).json({ error: 'could not save' })
     }
   })
+
+  // who am I (for showing the admin entry point)
+  app.get('/api/me', requireAuth, (req, res) => res.json({ email: req.userEmail, isAdmin: isAdmin(req.userEmail) }))
+
+  // ---- admin: appliance vetting + build companies ----
+  const cleanCompany = (b) => ({
+    name: String(b?.name ?? '').trim().slice(0, 120),
+    region: String(b?.region ?? '').trim().slice(0, 80) || null,
+    url: String(b?.url ?? '').trim().slice(0, 400) || null,
+    phone: String(b?.phone ?? '').trim().slice(0, 40) || null,
+    email: String(b?.email ?? '').trim().slice(0, 120) || null,
+    notes: String(b?.notes ?? '').trim().slice(0, 500) || null,
+  })
+
+  const adminRouter = express.Router()
+  adminRouter.use(requireAdmin)
+  const adminHandler = (fn) => async (req, res) => {
+    try {
+      res.json(await fn(req))
+    } catch (err) {
+      console.error('admin error:', err.message)
+      res.status(err.status || 500).json({ error: err.message })
+    }
+  }
+
+  adminRouter.get('/appliances', adminHandler(async () => ({ items: await storage.listAllShared() })))
+  adminRouter.post('/appliances/:key/approve', adminHandler(async (req) => ({ ok: await storage.setSharedStatus(req.params.key, 'approved') })))
+  adminRouter.post('/appliances/:key/reject', adminHandler(async (req) => ({ ok: await storage.removeShared(req.params.key) })))
+  adminRouter.post(
+    '/scan',
+    adminHandler(async (req) => {
+      const { url } = req.body ?? {}
+      if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) throw Object.assign(new Error('A valid URL is required'), { status: 400 })
+      const { item } = await ai.scanUrl(url.trim())
+      return { item } // the client builds the ApplianceType and re-POSTs to /import as admin (auto-approved)
+    }),
+  )
+  adminRouter.get('/companies', adminHandler(async () => ({ items: await storage.listCompanies() })))
+  adminRouter.post(
+    '/companies',
+    adminHandler(async (req) => {
+      const c = cleanCompany(req.body)
+      if (!c.name) throw Object.assign(new Error('name is required'), { status: 400 })
+      return { item: await storage.addCompany(c) }
+    }),
+  )
+  adminRouter.delete('/companies/:id', adminHandler(async (req) => ({ ok: await storage.removeCompany(Number(req.params.id)) })))
+  app.use('/api/admin', adminRouter)
 
   app.get('/api/health', (_req, res) =>
     res.json({ ok: true, storage: storage.kind, ai: Boolean(process.env.GEMINI_API_KEY) }),

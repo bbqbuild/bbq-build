@@ -126,12 +126,62 @@ export async function getSharedCatalog(): Promise<ApplianceType[]> {
 }
 
 /** Contribute an imported appliance to the shared catalog (best-effort). */
-export async function importAppliance(type: ApplianceType): Promise<void> {
+export async function importAppliance(type: ApplianceType): Promise<{ status: 'approved' | 'pending' } | null> {
   try {
-    await request('/api/catalog/import', { method: 'POST', body: JSON.stringify(type) })
+    return await request('/api/catalog/import', { method: 'POST', body: JSON.stringify(type) })
   } catch {
-    /* non-fatal — the item is still added locally */
+    return null // non-fatal — the item is still added locally
   }
+}
+
+// ---- admin ----
+
+export interface Me {
+  email: string
+  isAdmin: boolean
+}
+export async function getMe(): Promise<Me | null> {
+  try {
+    return await request<Me>('/api/me')
+  } catch {
+    return null
+  }
+}
+
+export type AdminAppliance = ApplianceType & { key: string; status: 'approved' | 'pending'; addedBy?: string; createdAt?: string }
+export interface Company {
+  id: number
+  name: string
+  region?: string | null
+  url?: string | null
+  phone?: string | null
+  email?: string | null
+  notes?: string | null
+}
+
+export async function adminListAppliances(): Promise<AdminAppliance[]> {
+  const { items } = await request<{ items: AdminAppliance[] }>('/api/admin/appliances')
+  return items
+}
+export async function adminApprove(key: string): Promise<void> {
+  await request(`/api/admin/appliances/${encodeURIComponent(key)}/approve`, { method: 'POST' })
+}
+export async function adminReject(key: string): Promise<void> {
+  await request(`/api/admin/appliances/${encodeURIComponent(key)}/reject`, { method: 'POST' })
+}
+export async function adminScan(url: string): Promise<{ item: AiProduct }> {
+  return request('/api/admin/scan', { method: 'POST', body: JSON.stringify({ url }) })
+}
+export async function adminListCompanies(): Promise<Company[]> {
+  const { items } = await request<{ items: Company[] }>('/api/admin/companies')
+  return items
+}
+export async function adminAddCompany(c: Omit<Company, 'id'>): Promise<Company> {
+  const { item } = await request<{ item: Company }>('/api/admin/companies', { method: 'POST', body: JSON.stringify(c) })
+  return item
+}
+export async function adminRemoveCompany(id: number): Promise<void> {
+  await request(`/api/admin/companies/${id}`, { method: 'DELETE' })
 }
 
 export async function aiValidate(design: Design, catalogSummary: string): Promise<ValidationReport> {

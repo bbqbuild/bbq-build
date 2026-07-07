@@ -271,9 +271,11 @@ function AppliancesTab() {
   const selection = useStore((s) => s.selection)
   const design = useStore((s) => s.design)
   const placeAppliance = useStore((s) => s.placeAppliance)
+  const removeCustomAppliance = useStore((s) => s.removeCustomAppliance)
   const sharedCatalog = useStore((s) => s.sharedCatalog)
   const unit = useStore((s) => s.unit)
   const push = useToasts((s) => s.push)
+  const ownIds = new Set((design.custom ?? []).map((c) => c.id))
 
   const selectedFrame =
     selection.kind === 'frame'
@@ -372,6 +374,18 @@ function AppliancesTab() {
                     </span>
                   </div>
                   <span className="appliance-price">{formatPrice(t.price)}</span>
+                  {ownIds.has(t.id) && (
+                    <button
+                      className="appliance-remove"
+                      title="Remove from your list (stays in the bbq.build catalog)"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        removeCustomAppliance(t.id)
+                      }}
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
               )
             })}
@@ -435,11 +449,15 @@ function AiProductSearch() {
       return
     }
     addCustomAppliance(t)
-    push(`${t.name} added to your catalog`, 'success')
-    // contribute to the shared catalog so everyone can use it, and show it now
-    const { sharedCatalog, setSharedCatalog: setShared } = useStore.getState()
-    if (!sharedCatalog.some((a) => a.id === t.id)) setShared([t, ...sharedCatalog])
-    importAppliance(t)
+    // submit to the shared catalog for admin vetting (or auto-approved if admin)
+    importAppliance(t).then((r) => {
+      push(
+        r?.status === 'approved'
+          ? `${t.name} added to the catalog`
+          : `${t.name} added — submitted to bbq.build for review`,
+        'success',
+      )
+    })
   }
 
   return (

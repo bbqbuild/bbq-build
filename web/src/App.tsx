@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { clearSession, createDesign, getSharedCatalog, setCachedEmail, updateDesign } from './auth/api'
+import { clearSession, createDesign, getMe, getSharedCatalog, setCachedEmail, updateDesign } from './auth/api'
 import { supabase } from './auth/supabase'
 import { Login } from './auth/Login'
 import { CanvasStage, fitView } from './canvas/CanvasStage'
@@ -18,11 +18,12 @@ import { TopBar } from './ui/TopBar'
 import { ValidateModal } from './ui/ValidateModal'
 import { DropDecisionModal } from './ui/DropDecisionModal'
 import { NewKitchenWizard } from './ui/NewKitchenWizard'
+import { AdminModal } from './ui/AdminModal'
 import { useToasts } from './ui/toast'
 import type { Design } from './types'
 import type { SavedDesign } from './types'
 
-type Modal = 'none' | 'presets' | 'spec' | 'designs' | 'validate'
+type Modal = 'none' | 'presets' | 'spec' | 'designs' | 'validate' | 'admin'
 // landing → public cover; auth → login/signup; home → dashboard; builder → editor
 type Route = 'landing' | 'auth' | 'home' | 'builder'
 
@@ -35,6 +36,7 @@ export default function App() {
   const [authReason, setAuthReason] = useState<string | undefined>(undefined)
   const [modal, setModal] = useState<Modal>('none')
   const [wizard, setWizard] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [saving, setSaving] = useState(false)
   const viewMode = useStore((s) => s.viewMode)
   const push = useToasts((s) => s.push)
@@ -109,6 +111,15 @@ export default function App() {
       if (list.length) useStore.getState().setSharedCatalog(list)
     })
   }, [])
+
+  // admin gets an extra panel to vet appliances + manage build companies
+  useEffect(() => {
+    if (!authed) {
+      setIsAdmin(false)
+      return
+    }
+    getMe().then((m) => setIsAdmin(Boolean(m?.isAdmin)))
+  }, [authed])
 
   const save = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -296,7 +307,14 @@ export default function App() {
   if (route === 'home' && authed) {
     return (
       <>
-        <HomeScreen onOpen={openDesign} onNew={newDesign} onLogout={logout} />
+        <HomeScreen
+          onOpen={openDesign}
+          onNew={newDesign}
+          onLogout={logout}
+          isAdmin={isAdmin}
+          onOpenAdmin={() => setModal('admin')}
+        />
+        {modal === 'admin' && <AdminModal onClose={() => setModal('none')} />}
         <Toasts />
       </>
     )
