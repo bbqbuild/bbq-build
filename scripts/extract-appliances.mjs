@@ -32,28 +32,29 @@ const TARGET = 10
 
 // category → app category + queries (vendor-diverse) to reach the target count
 const PLAN = [
-  { key: 'grill', queries: ['built-in gas grill outdoor kitchen Napoleon Blaze Weber', 'built-in stainless gas grill Bull Lion Alfresco Coyote', 'built-in propane natural gas grill VEVOR RCS'] },
-  { key: 'santamaria', queries: ['santa maria argentine gaucho grill built-in wood charcoal', 'built-in gaucho santa maria grill Tagwood Kalamera'] },
-  { key: 'kamado', queries: ['kamado ceramic grill Big Green Egg Primo Kamado Joe built-in', 'built-in ceramic kamado smoker outdoor kitchen'] },
-  { key: 'griddle', queries: ['built-in flat top griddle plancha outdoor kitchen Le Griddle Blackstone', 'built-in teppanyaki griddle stainless outdoor'] },
-  { key: 'burner', queries: ['built-in side burner power burner outdoor kitchen', 'built-in double side burner stainless propane'] },
-  { key: 'pizza', queries: ['built-in outdoor pizza oven Gozney Ooni Alfa Fontana', 'countertop gas wood pizza oven outdoor kitchen'] },
+  { key: 'grill', queries: ['built-in gas grill outdoor kitchen Napoleon', 'built-in gas grill Blaze Prelude LTE Professional', 'built-in gas grill Weber Summit Genesis', 'built-in stainless gas grill Bull Lion Alfresco', 'built-in gas grill Coyote RCS Summerset', 'built-in charcoal grill outdoor kitchen'] },
+  { key: 'santamaria', queries: ['santa maria argentine gaucho grill built-in', 'Tagwood built-in santa maria gaucho grill', 'built-in wood charcoal santa maria grill outdoor', 'gaucho grill wood fire built-in stainless', 'built-in Argentine parrilla grill outdoor kitchen'] },
+  { key: 'kamado', queries: ['Big Green Egg built-in kamado', 'Primo kamado grill oval built-in', 'Kamado Joe built-in ceramic grill', 'built-in ceramic kamado smoker outdoor kitchen', 'Vision Char-Griller Louisiana kamado grill'] },
+  { key: 'griddle', queries: ['Le Griddle built-in outdoor griddle', 'built-in flat top griddle plancha outdoor kitchen', 'Blaze Coyote Alfresco built-in griddle', 'built-in teppanyaki griddle stainless outdoor', 'built-in gas plancha outdoor kitchen'] },
+  { key: 'burner', queries: ['built-in side burner outdoor kitchen Blaze Coyote', 'built-in power burner outdoor kitchen', 'built-in double side burner stainless propane', 'Bull Lion Alfresco built-in side burner', 'built-in wok burner outdoor kitchen'] },
+  { key: 'pizza', queries: ['built-in outdoor pizza oven Gozney Alfa Fontana', 'countertop gas pizza oven outdoor kitchen Ooni', 'built-in gas pizza oven Blaze Coyote Summerset', 'wood fired pizza oven outdoor kitchen Forno', 'built-in stainless pizza oven Napoleon Bull'] },
   { key: 'sink', queries: ['outdoor kitchen drop-in sink stainless', 'built-in bar prep sink outdoor kitchen faucet', 'RCS Coyote Lynx Sunstone outdoor sink'] },
-  { key: 'fridge', queries: ['outdoor rated built-in refrigerator stainless', 'built-in outdoor fridge undercounter 24 inch stainless', 'Blaze Coyote Summerset outdoor refrigerator'] },
+  { key: 'fridge', queries: ['outdoor rated built-in refrigerator stainless', 'built-in outdoor fridge undercounter 24 inch', 'Blaze Coyote Summerset outdoor refrigerator', 'Lynx Bull RCS outdoor refrigerator built-in', 'outdoor beverage center built-in stainless'] },
   { key: 'kegerator', queries: ['outdoor built-in kegerator stainless', 'outdoor rated beer dispenser kegerator built-in', 'Blaze Coyote Summerset outdoor kegerator'] },
   { key: 'icemaker', queries: ['outdoor built-in ice maker stainless', 'outdoor rated undercounter ice machine built-in', 'Blaze Coyote outdoor ice maker'] },
   { key: 'icebin', queries: ['drop-in ice bin cooler outdoor kitchen stainless', 'built-in ice chest bin outdoor bar', 'RCS Coyote Sunstone drop-in ice bin'] },
   { key: 'trash', queries: ['outdoor kitchen trash drawer pull-out stainless', 'built-in double trash recycle drawer outdoor', 'Blaze Coyote RCS Sunstone trash drawer bin', 'stainless roll-out waste drawer outdoor kitchen'] },
   { key: 'doors', queries: ['outdoor kitchen stainless access doors', 'built-in double door outdoor kitchen stainless', 'Blaze Coyote RCS single double access door'] },
-  { key: 'drawers', queries: ['outdoor kitchen stainless storage drawers', 'built-in triple drawer outdoor kitchen stainless', 'Blaze Coyote RCS Sunstone drawer stack'] },
-  { key: 'woodstore', queries: ['outdoor kitchen firewood storage drawer', 'built-in wood storage santa maria outdoor', 'stainless firewood log storage outdoor kitchen'] },
+  { key: 'drawers', queries: ['outdoor kitchen stainless storage drawers', 'built-in triple drawer outdoor kitchen', 'Blaze Coyote RCS Sunstone drawer stack', 'built-in double drawer outdoor kitchen stainless', 'Lion Bull Alfresco outdoor storage drawer'] },
+  { key: 'woodstore', queries: ['outdoor kitchen firewood storage drawer', 'built-in wood storage santa maria outdoor', 'stainless firewood log storage outdoor kitchen', 'built-in charcoal wood storage drawer outdoor', 'santa maria grill wood store cabinet built-in'] },
 ]
 
 const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-async function collect(plan) {
+async function collect(plan, seed = []) {
   const byKey = new Map()
+  for (const s of seed) byKey.set(slug(`${s.brand}-${s.model}`), s) // keep prior finds when merging
   const item = (p) => ({
     brand: p.brand,
     model: p.model,
@@ -83,11 +84,17 @@ async function collect(plan) {
 
 async function main() {
   mkdirSync(OUT, { recursive: true })
-  const result = {}
+  // merge into any prior extract so --only tops up a category instead of wiping the rest
+  let result = {}
+  try {
+    result = require(join(OUT, 'appliances.json'))
+  } catch {
+    /* first run */
+  }
   for (const plan of PLAN) {
     if (ONLY && !ONLY.has(plan.key)) continue
     console.log(`▸ ${plan.key}`)
-    result[plan.key] = await collect(plan)
+    result[plan.key] = await collect(plan, result[plan.key] ?? [])
   }
 
   writeFileSync(join(OUT, 'appliances.json'), JSON.stringify(result, null, 2))
