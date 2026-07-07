@@ -2621,3 +2621,5 @@ input[type='range'] {
 .crash-card p { color: var(--text-dim); margin: 0 0 14px; }
 .crash-detail { text-align: left; font-size: 12px; color: var(--text-faint); background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
 .crash-actions { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
+
+.wiz-head-actions { display: flex; align-items: center; gap: 8px; }

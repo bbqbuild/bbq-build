@@ -91,6 +91,8 @@ interface BuilderState {
   removeFrame: (id: string) => void
   /** absorb the adjacent (empty) frame on one side into this one; returns false if not possible */
   mergeFrame: (id: string, dir: 'left' | 'right') => boolean
+  /** split this frame into two — appliances stay on the left, the right is a new empty frame */
+  splitFrame: (id: string) => boolean
   moveFrame: (id: string, toIndex: number, run?: RunId) => void
   setFrameFinish: (id: string, finish: FrameFinish) => void
   setFrameLowered: (id: string, lowered: boolean) => boolean
@@ -434,6 +436,33 @@ export const useStore = create<BuilderState>((set, get) => {
         const f = d.frames.find((x) => x.id === id)!
         f.width += neighbor.width
         d.frames = d.frames.filter((x) => x.id !== neighbor.id)
+      })
+      set({ selection: { kind: 'frame', id } })
+      return true
+    },
+
+    splitFrame: (id) => {
+      const { design } = get()
+      const frame = design.frames.find((f) => f.id === id)
+      if (!frame) return false
+      const appls = design.appliances.filter((a) => a.frameId === id)
+      // the appliances keep a valid footprint on the left; the rest becomes a new empty frame
+      const minLeft = appls.reduce((m, a) => Math.max(m, getAppliance(a.typeId).minFrameWidth), 20)
+      const leftW = appls.length ? minLeft : Math.round(frame.width / 2)
+      const rightW = frame.width - leftW
+      if (leftW < 20 || rightW < 20) return false // not enough room for two frames
+      commit((d) => {
+        const f = d.frames.find((x) => x.id === id)!
+        f.width = leftW
+        const nf = {
+          id: newId('f'),
+          width: rightW,
+          finish: f.finish,
+          ...(f.lowered ? { lowered: true } : {}),
+          ...(f.run && f.run !== 'back' ? { run: f.run } : {}),
+        }
+        const idx = d.frames.findIndex((x) => x.id === id)
+        d.frames.splice(idx + 1, 0, nf)
       })
       set({ selection: { kind: 'frame', id } })
       return true

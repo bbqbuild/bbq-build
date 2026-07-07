@@ -124,7 +124,7 @@ async function main() {
 
   // Admin allow-list (comma-separated emails in ADMIN_EMAILS; defaults to the owner)
   const ADMIN_EMAILS = new Set(
-    (process.env.ADMIN_EMAILS || 'sagi@frontegg.com,sagi@qipi.ai')
+    (process.env.ADMIN_EMAILS || 'sagi@frontegg.com,sagi@qipi.ai,sagirodin@gmail.com')
       .split(',')
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean),

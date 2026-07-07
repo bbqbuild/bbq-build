@@ -124,6 +124,7 @@ function FramePanel({ frame }: { frame: Frame }) {
   const design = useStore((s) => s.design)
   const removeFrame = useStore((s) => s.removeFrame)
   const mergeFrame = useStore((s) => s.mergeFrame)
+  const splitFrame = useStore((s) => s.splitFrame)
   const setFrameFinish = useStore((s) => s.setFrameFinish)
   const setFrameLowered = useStore((s) => s.setFrameLowered)
   const setFrameWidth = useStore((s) => s.setFrameWidth)
@@ -142,6 +143,10 @@ function FramePanel({ frame }: { frame: Frame }) {
     const n = neighbour(dir)
     return Boolean(n) && !design.appliances.some((a) => a.frameId === neighbour(dir)!.id)
   }
+  // splittable if there's room for two ≥20cm frames after keeping appliances valid
+  const appls = design.appliances.filter((a) => a.frameId === frame.id)
+  const minLeft = appls.reduce((m, a) => Math.max(m, getAppliance(a.typeId).minFrameWidth), 20)
+  const splittable = frame.width - (appls.length ? minLeft : Math.round(frame.width / 2)) >= 20
 
   return (
     <div className="panel">
@@ -202,8 +207,17 @@ function FramePanel({ frame }: { frame: Frame }) {
           <dd>{spec ? formatPrice(spec.price) : '—'}</dd>
         </div>
       </dl>
-      {(neighbour('left') || neighbour('right')) && (
+      {(neighbour('left') || neighbour('right') || splittable) && (
         <div className="merge-row">
+          {splittable && (
+            <button
+              className="btn btn-ghost"
+              title="Split this frame into two — appliances stay, the new section is empty counter"
+              onClick={() => splitFrame(frame.id)}
+            >
+              ⇥⇤ Split
+            </button>
+          )}
           {neighbour('left') && (
             <button
               className="btn btn-ghost"

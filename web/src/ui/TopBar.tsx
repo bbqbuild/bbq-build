@@ -13,11 +13,13 @@ interface Props {
   onNew: () => void
   onHome: () => void
   onLogout: () => void
+  onOpenAdmin?: () => void
+  isAdmin?: boolean
   saving: boolean
   guest?: boolean
 }
 
-export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onOpenValidate, onNew, onHome, onLogout, saving, guest }: Props) {
+export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onOpenValidate, onNew, onHome, onLogout, onOpenAdmin, isAdmin, saving, guest }: Props) {
   const design = useStore((s) => s.design)
   const dirty = useStore((s) => s.dirty)
   const setName = useStore((s) => s.setName)
@@ -164,6 +166,9 @@ export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onOpe
                   <div className="menu-email">{getEmail()}</div>
                   <button onClick={() => { setMenuOpen(false); onNew() }}>New design</button>
                   <button onClick={() => { setMenuOpen(false); onOpenDesigns() }}>My designs…</button>
+                  {isAdmin && onOpenAdmin && (
+                    <button onClick={() => { setMenuOpen(false); onOpenAdmin() }}>⚙ Admin panel</button>
+                  )}
                   <hr />
                   <button onClick={onLogout}>Sign out</button>
                 </div>

@@ -204,6 +204,13 @@ export default function App() {
     requestAnimationFrame(fitView)
   }, [])
 
+  // Cancel the new-kitchen wizard: back out to where the user came from rather
+  // than dropping them into an empty builder.
+  const cancelWizard = useCallback(() => {
+    setWizard(false)
+    setRoute(authed ? 'home' : 'landing')
+  }, [authed])
+
   const openDesign = useCallback((d: SavedDesign) => {
     useStore.getState().setDesign(d.data, d.id)
     setRoute('builder')
@@ -343,6 +350,8 @@ export default function App() {
         onNew={newDesign}
         onHome={goHome}
         onLogout={logout}
+        isAdmin={isAdmin}
+        onOpenAdmin={() => setModal('admin')}
       />
       <div className="workspace">
         <Sidebar />
@@ -354,7 +363,8 @@ export default function App() {
       {modal === 'spec' && <SpecModal onClose={() => setModal('none')} />}
       {modal === 'designs' && <DesignsModal onClose={() => setModal('none')} />}
       {modal === 'validate' && <ValidateModal onClose={() => setModal('none')} />}
-      {wizard && <NewKitchenWizard onDone={finishWizard} onSkip={() => setWizard(false)} />}
+      {modal === 'admin' && <AdminModal onClose={() => setModal('none')} />}
+      {wizard && <NewKitchenWizard onDone={finishWizard} onSkip={() => setWizard(false)} onCancel={cancelWizard} />}
       <DropDecisionModal />
       <Toasts />
     </div>

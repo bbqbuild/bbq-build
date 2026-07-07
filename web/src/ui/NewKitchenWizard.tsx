@@ -40,7 +40,15 @@ function LayoutDiagram({ id, island }: { id: LayoutShape; island: boolean }) {
   )
 }
 
-export function NewKitchenWizard({ onDone, onSkip }: { onDone: (d: Design) => void; onSkip: () => void }) {
+export function NewKitchenWizard({
+  onDone,
+  onSkip,
+  onCancel,
+}: {
+  onDone: (d: Design) => void
+  onSkip: () => void
+  onCancel?: () => void
+}) {
   const unit = useStore((s) => s.unit)
   const [step, setStep] = useState(0)
   const [counts, setCounts] = useState<Counts>({})
@@ -95,9 +103,22 @@ export function NewKitchenWizard({ onDone, onSkip }: { onDone: (d: Design) => vo
               </span>
             ))}
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={onSkip}>
-            Start from scratch
-          </button>
+          <div className="wiz-head-actions">
+            <button className="btn btn-ghost btn-sm" onClick={onSkip}>
+              Start from scratch
+            </button>
+            {onCancel && (
+              <button
+                className="btn btn-icon"
+                title="Cancel"
+                onClick={() => {
+                  if (totalCount === 0 || confirm('Discard this new kitchen and go back?')) onCancel()
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </header>
 
         {step === 0 && (
