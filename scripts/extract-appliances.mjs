@@ -25,7 +25,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const OUT = join(ROOT, 'catalog-extract')
 
 const args = process.argv.slice(2)
-const PUSH = args.includes('--push')
+const PUSH_ONLY = args.includes('--push-only') // push existing appliances.json, no re-extraction
+const PUSH = args.includes('--push') || PUSH_ONLY
 const onlyArg = args[args.indexOf('--only') + 1]
 const ONLY = args.includes('--only') && onlyArg ? new Set(onlyArg.split(',')) : null
 const TARGET = 10
@@ -91,10 +92,12 @@ async function main() {
   } catch {
     /* first run */
   }
-  for (const plan of PLAN) {
-    if (ONLY && !ONLY.has(plan.key)) continue
-    console.log(`▸ ${plan.key}`)
-    result[plan.key] = await collect(plan, result[plan.key] ?? [])
+  if (!PUSH_ONLY) {
+    for (const plan of PLAN) {
+      if (ONLY && !ONLY.has(plan.key)) continue
+      console.log(`▸ ${plan.key}`)
+      result[plan.key] = await collect(plan, result[plan.key] ?? [])
+    }
   }
 
   writeFileSync(join(OUT, 'appliances.json'), JSON.stringify(result, null, 2))
