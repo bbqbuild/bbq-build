@@ -7,3 +7,4 @@ screenshots/
 *.log
 web/.env
 web/.env.production
+catalog-extract/
