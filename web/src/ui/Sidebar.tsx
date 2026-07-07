@@ -35,8 +35,12 @@ function RunPills() {
   const activeRun = useStore((s) => s.activeRun)
   const setActiveRun = useStore((s) => s.setActiveRun)
   const runs = runsForLayout(design.layout)
-  const available: RunId[] = [...runs, ...(design.island ? (['island'] as RunId[]) : [])]
-  const label: Record<string, string> = { back: 'Main', left: 'Left', right: 'Right', island: 'Island' }
+  const available: RunId[] = [
+    ...runs,
+    ...(design.island ? (['island'] as RunId[]) : []),
+    ...(design.island && design.islandCorner ? (['island-wing'] as RunId[]) : []),
+  ]
+  const label: Record<string, string> = { back: 'Main', left: 'Left', right: 'Right', island: 'Island', 'island-wing': 'Isl. wing' }
   return (
     <div className="run-pills">
       {available.map((r) => (
@@ -52,6 +56,10 @@ function BuildTab() {
   const ground = useStore((s) => s.design.ground)
   const frames = useStore((s) => s.design.frames)
   const island = useStore((s) => Boolean(s.design.island))
+  const islandCorner = useStore((s) => Boolean(s.design.islandCorner))
+  const addIslandCorner = useStore((s) => s.addIslandCorner)
+  const removeIslandCorner = useStore((s) => s.removeIslandCorner)
+  const setActiveRunAction = useStore((s) => s.setActiveRun)
   const pergola = useStore((s) => Boolean(s.design.pergola))
   const setPergola = useStore((s) => s.setPergola)
   const islandBar = useStore((s) => Boolean(s.design.islandBar))
@@ -70,7 +78,7 @@ function BuildTab() {
   const [depth, setDepth] = useState(groundDepth(ground))
 
   const cornersFull = layout === 'u'
-  const runLabel = { back: 'main run', left: 'left wing', right: 'right wing', island: 'island' }[activeRun]
+  const runLabel = { back: 'main run', left: 'left wing', right: 'right wing', island: 'island', 'island-wing': 'island wing' }[activeRun]
 
   const addCorner = (style: 'diagonal' | 'square') => {
     const wing = addCornerUnit(style)
@@ -161,6 +169,26 @@ function BuildTab() {
             Square
           </button>
         </div>
+        {island && (
+          <div className="island-corner-row">
+            {islandCorner ? (
+              <button className="btn btn-ghost btn-sm" onClick={removeIslandCorner}>
+                Remove island corner
+              </button>
+            ) : (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  addIslandCorner('diagonal')
+                  setActiveRunAction('island-wing')
+                  push('Island corner added — new frames flow into the island wing', 'success')
+                }}
+              >
+                + Add island corner (L-shape)
+              </button>
+            )}
+          </div>
+        )}
         {(layout !== 'straight' || island) && (
           <div className="run-switch">
             <span>New frames go to:</span>

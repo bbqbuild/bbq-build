@@ -2623,3 +2623,6 @@ input[type='range'] {
 .crash-actions { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
 
 .wiz-head-actions { display: flex; align-items: center; gap: 8px; }
+
+.island-corner-row { margin-top: 8px; }
+.island-corner-row .btn { width: 100%; }

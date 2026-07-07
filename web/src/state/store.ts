@@ -86,6 +86,9 @@ interface BuilderState {
   setGround: (patch: Partial<{ type: GroundType; width: number; depth: number }>) => void
   setLayout: (layout: LayoutShape) => void
   setIsland: (island: boolean) => void
+  addIslandCorner: (style?: 'diagonal' | 'square') => void
+  setIslandCornerStyle: (style: 'diagonal' | 'square') => void
+  removeIslandCorner: () => void
   setIslandPos: (x: number, z: number) => void
   addFrame: (width: number, index?: number, lowered?: boolean, run?: RunId) => string
   removeFrame: (id: string) => void
@@ -253,7 +256,7 @@ export const useStore = create<BuilderState>((set, get) => {
         // frames stranded in removed runs fall back to the back counter
         const active = new Set(runsForLayout(layout))
         for (const f of d.frames) {
-          if (f.run && f.run !== 'island' && !active.has(f.run)) f.run = 'back'
+          if (f.run && f.run !== 'island' && f.run !== 'island-wing' && !active.has(f.run)) f.run = 'back'
         }
       }),
 
@@ -261,9 +264,29 @@ export const useStore = create<BuilderState>((set, get) => {
       commit((d) => {
         d.island = island
         if (!island) {
-          for (const f of d.frames) if (f.run === 'island') f.run = 'back'
+          for (const f of d.frames) if (f.run === 'island' || f.run === 'island-wing') f.run = 'back'
           delete d.islandPos
+          delete d.islandCorner
         }
+      }),
+
+    addIslandCorner: (style = 'diagonal') =>
+      commit((d) => {
+        d.island = true
+        d.islandCorner = true
+        d.islandCornerStyle = style
+      }),
+
+    setIslandCornerStyle: (style) =>
+      commit((d) => {
+        d.islandCornerStyle = style
+      }),
+
+    removeIslandCorner: () =>
+      commit((d) => {
+        d.islandCorner = false
+        // fold the wing back into the main island run
+        for (const f of d.frames) if (f.run === 'island-wing') f.run = 'island'
       }),
 
     setIslandPos: (x, z) =>

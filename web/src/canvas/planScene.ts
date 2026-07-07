@@ -96,21 +96,27 @@ export function cornerPlans(scene: SceneLayout3): Array<{ id: CornerId; rects: C
  * a pentagon with a 45° cut for 'diagonal', a full square for 'square'.
  * `grow` expands the outer edges by the counter overhang.
  */
-export function cornerPoly(side: CornerId, x0: number, style: 'diagonal' | 'square', grow: number): Array<[number, number]> {
+export function cornerPoly(
+  side: CornerId,
+  x0: number,
+  style: 'diagonal' | 'square',
+  grow: number,
+  z0 = 0,
+): Array<[number, number]> {
   const CN = CORNER
   if (style === 'square') {
     return [
-      [x0 - grow, -grow],
-      [x0 + CN + grow, -grow],
-      [x0 + CN + grow, CN + grow],
-      [x0 - grow, CN + grow],
+      [x0 - grow, z0 - grow],
+      [x0 + CN + grow, z0 - grow],
+      [x0 + CN + grow, z0 + CN + grow],
+      [x0 - grow, z0 + CN + grow],
     ]
   }
   const local: Array<[number, number]> =
     side === 'left'
       ? [[0, 0], [CN, 0], [CN, RUN_DEPTH], [RUN_DEPTH, CN], [0, CN]]
       : [[0, 0], [CN, 0], [CN, CN], [CN - RUN_DEPTH, CN], [0, RUN_DEPTH]]
-  return local.map(([dx, dz]) => [x0 + dx + (dx > CN / 2 ? grow : -grow), dz + (dz > CN / 2 ? grow : -grow)])
+  return local.map(([dx, dz]) => [x0 + dx + (dx > CN / 2 ? grow : -grow), z0 + dz + (dz > CN / 2 ? grow : -grow)])
 }
 
 function pointInPoly(pts: Array<[number, number]>, x: number, z: number): boolean {
@@ -240,9 +246,10 @@ function drawCounters(ctx: Ctx, s: RenderState) {
     pts.forEach(([x, z], i) => (i === 0 ? ctx.moveTo(x, z) : ctx.lineTo(x, z)))
     ctx.closePath()
   }
-  for (const c of cornerPlans(s.scene)) {
-    const style = cornerFor(s.design, c.id)?.style ?? 'diagonal'
-    const pts = cornerPoly(c.id, c.x0, style, COUNTER_OVERHANG)
+  const cornerPolys = cornerPlans(s.scene).map((c) => cornerPoly(c.id, c.x0, cornerFor(s.design, c.id)?.style ?? 'diagonal', COUNTER_OVERHANG))
+  const ic = s.scene.islandCorner
+  if (ic) cornerPolys.push(cornerPoly('right', ic.x0, ic.style, COUNTER_OVERHANG, ic.z0))
+  for (const pts of cornerPolys) {
     ctx.save()
     ctx.shadowColor = 'rgba(0,0,0,0.45)'
     ctx.shadowBlur = 8

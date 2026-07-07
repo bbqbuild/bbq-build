@@ -13,7 +13,7 @@ export interface Ground {
 export type LayoutShape = 'straight' | 'l-left' | 'l-right' | 'u'
 
 /** Which counter run a frame belongs to. */
-export type RunId = 'back' | 'left' | 'right' | 'island'
+export type RunId = 'back' | 'left' | 'right' | 'island' | 'island-wing'
 
 export type CornerId = 'left' | 'right'
 
@@ -72,6 +72,10 @@ export interface Design {
   islandPos?: { x: number; z: number }
   /** island is a bar: appliances face the cook, counter overhangs the guest side with stools */
   islandBar?: boolean
+  /** the island turns a corner into an L (adds the 'island-wing' run) */
+  islandCorner?: boolean
+  /** island corner style; default diagonal */
+  islandCornerStyle?: 'diagonal' | 'square'
   frames: Frame[]
   appliances: PlacedAppliance[]
   /** Corner units per side. Missing key → default corner for active wings; explicit null → removed. */
@@ -98,6 +102,7 @@ export const RUN_NAMES: Record<RunId, string> = {
   left: 'Left wing',
   right: 'Right wing',
   island: 'Island',
+  'island-wing': 'Island wing',
 }
 
 /** Runs available for a shape (island is orthogonal, controlled by design.island). */

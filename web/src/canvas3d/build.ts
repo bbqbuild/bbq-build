@@ -113,6 +113,17 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
         uOf: (p) => p.z - z0,
         len: run.elev.len,
       }
+    } else if (run.id === 'island-wing') {
+      // the island's L leg — a vertical run in island space
+      const cx = run.plan.x + RUN_DEPTH / 2
+      const z0 = run.plan.z
+      basis = {
+        id: 'island-wing',
+        rotY: -Math.PI / 2,
+        pos: (u, y) => new THREE.Vector3(cx, y, z0 + u),
+        uOf: (p) => p.z - z0,
+        len: run.elev.len,
+      }
     } else {
       const cx = run.plan.x + RUN_DEPTH / 2
       const z0 = run.plan.z
@@ -125,6 +136,7 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
       }
     }
     bases.set(run.id, basis)
+    const onIsland = run.id === 'island' || run.id === 'island-wing'
 
     // ---- frames (per-frame group so appliance parts can animate in local space) ----
     for (const fl of run.elev.frames) {
@@ -135,7 +147,7 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
       const fgroup = new THREE.Group()
       fgroup.position.copy(basis.pos(centerU, 0))
       fgroup.rotation.y = basis.rotY
-      ;(run.id === 'island' ? islandGroup : group).add(fgroup)
+      ;(onIsland ? islandGroup : group).add(fgroup)
       pickables.push(fgroup)
 
       // body with a dark cavity front (base appliance is real 3D geometry)
@@ -201,7 +213,7 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
       cbox.castShadow = true
       cbox.receiveShadow = true
       cbox.userData = { kind: 'counter', run: run.id }
-      ;(run.id === 'island' ? islandGroup : group).add(cbox)
+      ;(onIsland ? islandGroup : group).add(cbox)
       pickables.push(cbox)
     }
 
@@ -209,7 +221,7 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
     if (showDims && run.elev.frames.length) {
       const tops = run.elev.appliances.filter((a) => a.placed.zone === 'top').map((a) => -a.rect.y)
       const topY = Math.max(96, ...tops) + 14
-      const dimTarget = run.id === 'island' ? islandGroup : group
+      const dimTarget = onIsland ? islandGroup : group
       for (const fl of run.elev.frames) {
         const sp = labelSprite(formatLenBare(fl.frame.width, unit), 0.8)
         sp.position.copy(basis.pos(fl.body.x + fl.body.w / 2, topY))
@@ -428,6 +440,42 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
         group.add(ring)
       }
     }
+  }
+
+  // ---- island L corner (pentagon/box, in island space) ----
+  if (scene2d.islandCorner) {
+    const ic = scene2d.islandCorner
+    const CN = 90
+    const bodyH = 82
+    const localPts: Array<[number, number]> =
+      ic.style === 'square'
+        ? [[0, 0], [CN, 0], [CN, CN], [0, CN]]
+        : [[0, 0], [CN, 0], [CN, CN], [CN - RUN_DEPTH, CN], [0, RUN_DEPTH]]
+    const mkPent = (h: number, yBase: number, mat: THREE.Material, grow = 0) => {
+      const shape = new THREE.Shape()
+      localPts.forEach(([dx, dz], i) => {
+        const px = dx + (dx > CN / 2 ? grow : -grow)
+        const pz = dz + (dz > CN / 2 ? grow : -grow)
+        i === 0 ? shape.moveTo(px, pz) : shape.lineTo(px, pz)
+      })
+      shape.closePath()
+      const geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false })
+      ;(mat as THREE.MeshStandardMaterial).side = THREE.DoubleSide
+      const mesh = new THREE.Mesh(geo, mat)
+      mesh.rotation.x = Math.PI / 2
+      mesh.position.set(ic.x0, yBase + h, ic.z0)
+      mesh.castShadow = true
+      mesh.receiveShadow = true
+      mesh.userData = { kind: 'counter', run: 'island' }
+      return mesh
+    }
+    const finish = design.frames.find((f) => (f.run ?? '') === 'island')?.finish ?? design.frames[0]?.finish ?? 'graphite'
+    const cbody = mkPent(bodyH, 0, finishMat(finish))
+    islandGroup.add(cbody)
+    pickables.push(cbody)
+    const ctop = mkPent(COUNTER_T, bodyH, counterMat.clone(), COUNTER_OVERHANG)
+    islandGroup.add(ctop)
+    pickables.push(ctop)
   }
 
   // ---- ground dimension lines (measures on the canvas) ----

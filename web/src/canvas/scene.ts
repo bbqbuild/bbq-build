@@ -124,12 +124,23 @@ export interface CounterTop {
   corner?: CornerId
 }
 
+export interface IslandCorner {
+  /** plan origin: x where the corner square starts, z of the island back edge */
+  x0: number
+  z0: number
+  style: 'diagonal' | 'square'
+  /** counter surface height above ground */
+  y: number
+}
+
 export interface SceneLayout3 {
   runs: RunScene[]
   counterTops: CounterTop[]
   ground: { x: number; z: number; w: number; d: number }
   cornerCount: number
   overflow: boolean
+  /** the island's L corner, when design.islandCorner is set */
+  islandCorner?: IslandCorner
   /** projected world-screen bounding box for zoom-to-fit */
   bounds: Rect
   /** plan extents of the kitchen */
@@ -288,10 +299,14 @@ export function computeScene(design: Design): SceneLayout3 {
   }
 
   let islandZ0 = 0
+  let islandCorner: IslandCorner | undefined
+  let islandRight = 0
+  let islandBottom = 0
   if (hasIsland) {
     const elev = computeRunElevation(islandFrames, design.appliances)
     const wingEnd = Math.max(hasL ? leftZ0 + lenL : 0, hasR ? rightZ0 + lenR : 0, RUN_DEPTH)
     islandZ0 = design.islandPos?.z ?? wingEnd + ISLAND_AISLE
+    const islandLen = Math.max(elev.len, 1)
     const ix0 = (design.islandPos?.x ?? 0) - Math.max(elev.len, 40) / 2
     runs.push({
       id: 'island',
@@ -300,10 +315,10 @@ export function computeScene(design: Design): SceneLayout3 {
       face: {
         origin: { x: ix0, z: islandZ0 + RUN_DEPTH },
         dir: { x: 1, z: 0 },
-        len: Math.max(elev.len, 1),
+        len: islandLen,
         top: ELEV_TOP,
       },
-      plan: { x: ix0, z: islandZ0, w: Math.max(elev.len, 1), d: RUN_DEPTH },
+      plan: { x: ix0, z: islandZ0, w: islandLen, d: RUN_DEPTH },
       depth: islandZ0 + RUN_DEPTH,
       mirror: false,
       reversed: Boolean(design.islandBar),
@@ -314,15 +329,53 @@ export function computeScene(design: Design): SceneLayout3 {
       w: u1 - u0,
       d: RUN_DEPTH + COUNTER_OVERHANG * 2,
     }))
+    islandRight = ix0 + islandLen
+    islandBottom = islandZ0 + RUN_DEPTH
+
+    // L corner + wing off the right end of the island
+    if (design.islandCorner) {
+      const style = design.islandCornerStyle ?? 'diagonal'
+      const ixEnd = ix0 + islandLen
+      islandCorner = { x0: ixEnd, z0: islandZ0, style, y: 88 }
+      const wingFrames = runFrames(design, 'island-wing')
+      const wingElev = computeRunElevation(wingFrames, design.appliances)
+      const wx = ixEnd + CORNER - RUN_DEPTH
+      const wz0 = islandZ0 + CORNER
+      const wingLen = Math.max(wingElev.len, 1)
+      runs.push({
+        id: 'island-wing',
+        frames: wingFrames,
+        elev: wingElev,
+        face: { origin: { x: wx, z: wz0 }, dir: { x: 0, z: 1 }, len: wingLen, top: ELEV_TOP },
+        plan: { x: wx, z: wz0, w: RUN_DEPTH, d: wingLen },
+        depth: wz0 + wingLen,
+        mirror: false,
+        endCap:
+          wingElev.frames.length > 0
+            ? {
+                face: { origin: { x: wx, z: wz0 + wingElev.len }, dir: { x: 1, z: 0 }, len: RUN_DEPTH, top: ELEV_TOP },
+                frame: wingFrames[wingFrames.length - 1],
+              }
+            : undefined,
+      })
+      pushTops('island-wing', wingElev, (u0, u1) => ({
+        x: wx,
+        z: wz0 + u0,
+        w: RUN_DEPTH + COUNTER_OVERHANG,
+        d: u1 - u0,
+      }))
+      islandRight = Math.max(islandRight, ixEnd + CORNER)
+      islandBottom = Math.max(islandBottom, wz0 + wingLen)
+    }
   }
 
   // plan extents of built things
   const wingMax = Math.max(hasL ? (leftCorner ? CORNER : RUN_DEPTH) + lenL : 0, hasR ? (rightCorner ? CORNER : RUN_DEPTH) + lenR : 0)
-  const z1 = Math.max(RUN_DEPTH, wingMax, hasIsland ? islandZ0 + RUN_DEPTH : 0)
+  const z1 = Math.max(RUN_DEPTH, wingMax, hasIsland ? islandBottom : 0)
   const islandCx = design.islandPos?.x ?? 0
   const extents = {
     x0: Math.min(x0, hasIsland ? islandCx - wIsland / 2 : x0),
-    x1: Math.max(x1, hasIsland ? islandCx + wIsland / 2 : x1),
+    x1: Math.max(x1, hasIsland ? Math.max(islandCx + wIsland / 2, islandRight) : x1),
     z0: 0,
     z1,
   }
@@ -347,5 +400,5 @@ export function computeScene(design: Design): SceneLayout3 {
   const by1 = Math.max(...pts.map((p) => p.y))
   const bounds: Rect = { x: bx0, y: by0, w: bx1 - bx0, h: by1 - by0 + GROUND_T }
 
-  return { runs, counterTops, ground, cornerCount, overflow, bounds, extents }
+  return { runs, counterTops, ground, cornerCount, overflow, islandCorner, bounds, extents }
 }
