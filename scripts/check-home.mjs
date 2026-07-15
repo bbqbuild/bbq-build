@@ -10,7 +10,7 @@ const check = (n, c) => { console.log(`${c ? 'PASS' : 'FAIL'}  ${n}`); if (!c) f
 await p.goto('http://127.0.0.1:3000')
 await p.evaluate(() => { localStorage.clear(); localStorage.setItem('bbq_view', '3d') })
 await p.reload()
-await p.fill('input[type=password]', 'Ember&Oak-2417')
+await p.fill('input[type=password]', process.env.BBQ_USER_PASSWORD)
 await p.click('button[type=submit]')
 
 // after login → home dashboard

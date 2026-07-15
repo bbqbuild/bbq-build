@@ -9,9 +9,9 @@ echo "DB URL acquired (host: $(echo $DB_URL | sed 's/.*@//;s/\/.*//'))"
 
 SECRET=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 40)
 
-python3 - "$DB_URL" "$SECRET" "$GEMINI_API_KEY" <<'PYEOF' > /tmp/svc-payload.json
+python3 - "$DB_URL" "$SECRET" "$GEMINI_API_KEY" "$BBQ_USER_EMAIL" "$BBQ_USER_PASSWORD" <<'PYEOF' > /tmp/svc-payload.json
 import json, sys
-db_url, secret, gemini = sys.argv[1], sys.argv[2], sys.argv[3]
+db_url, secret, gemini, user_email, user_password = sys.argv[1:6]
 print(json.dumps({
   "type": "web_service",
   "name": "bbq-build",
@@ -32,8 +32,8 @@ print(json.dumps({
   "envVars": [
     {"key": "NODE_VERSION", "value": "22"},
     {"key": "BBQ_SECRET", "value": secret},
-    {"key": "BBQ_USER_EMAIL", "value": "sagirodin@gmail.com"},
-    {"key": "BBQ_USER_PASSWORD", "value": "Ember&Oak-2417"},
+    {"key": "BBQ_USER_EMAIL", "value": user_email},
+    {"key": "BBQ_USER_PASSWORD", "value": user_password},
     {"key": "GEMINI_API_KEY", "value": gemini},
     {"key": "DATABASE_URL", "value": db_url}
   ]

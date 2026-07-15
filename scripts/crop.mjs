@@ -2,7 +2,7 @@ import { chromium } from 'playwright'
 const browser = await chromium.launch()
 const page = await browser.newPage({ viewport: { width: 1600, height: 950 } })
 await page.goto('http://127.0.0.1:3000')
-await page.fill('input[type=password]', 'Ember&Oak-2417')
+await page.fill('input[type=password]', process.env.BBQ_USER_PASSWORD)
 await page.click('button[type=submit]')
 await page.waitForSelector('.topbar')
 await page.click('text=✨ Presets')

@@ -5,7 +5,7 @@ p.setDefaultTimeout(60000); p.on('dialog', d=>d.accept()); p.on('pageerror', e=>
 await p.goto('http://127.0.0.1:3000')
 await p.evaluate(()=>{localStorage.clear(); localStorage.setItem('bbq_view','3d')})
 await p.reload()
-await p.fill('input[type=password]','Ember&Oak-2417'); await p.click('button[type=submit]'); await p.waitForSelector('.topbar')
+await p.fill('input[type=password]',process.env.BBQ_USER_PASSWORD); await p.click('button[type=submit]'); await p.waitForSelector('.topbar')
 const unit = await p.evaluate(()=>window.__bbq().unit)
 console.log('default unit:', unit)
 // open Base & layout, check width shows feet, type feet value

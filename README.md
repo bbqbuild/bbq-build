@@ -33,7 +33,7 @@ npm start          # http://127.0.0.1:8000  (PORT=3000 to override)
 
 Dev mode with HMR: `npm run dev` (Vite on 5173, proxies /api to 8000).
 
-Login: `sagirodin@gmail.com` / `Ember&Oak-2417` (override with `BBQ_USER_EMAIL` / `BBQ_USER_PASSWORD`).
+Login: set `BBQ_USER_EMAIL` / `BBQ_USER_PASSWORD` in `.env` (see `.env` locally; never commit them).
 
 ## Screenshot harness
 

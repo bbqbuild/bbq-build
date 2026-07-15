@@ -21,8 +21,11 @@ const PORT = process.env.PORT || 8000
 const HOST = process.env.HOST || (process.env.RENDER ? '0.0.0.0' : '127.0.0.1')
 
 // v1: a single invited builder. Supabase-backed multi-user auth lands in v2.
-const USER_EMAIL = process.env.BBQ_USER_EMAIL || 'sagirodin@gmail.com'
-const USER_PASSWORD = process.env.BBQ_USER_PASSWORD || 'Ember&Oak-2417'
+const USER_EMAIL = process.env.BBQ_USER_EMAIL
+const USER_PASSWORD = process.env.BBQ_USER_PASSWORD
+if (!USER_EMAIL || !USER_PASSWORD) {
+  throw new Error('BBQ_USER_EMAIL and BBQ_USER_PASSWORD must be set (.env locally, dashboard on Render)')
+}
 const SECRET = process.env.BBQ_SECRET || 'dev-secret-not-for-prod'
 const SUPABASE_URL = process.env.SUPABASE_URL || ''
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || ''

@@ -5,7 +5,7 @@ p.setDefaultTimeout(120000)
 p.on('pageerror', (e) => console.log('PAGE ERROR:', e.message))
 p.on('console', (m) => m.type() === 'error' && console.log('CONSOLE:', m.text().slice(0, 200)))
 await p.goto('http://127.0.0.1:3000')
-await p.fill('input[type=password]', 'Ember&Oak-2417')
+await p.fill('input[type=password]', process.env.BBQ_USER_PASSWORD)
 await p.click('button[type=submit]')
 await p.waitForSelector('.topbar')
 

@@ -18,7 +18,7 @@ await page.waitForTimeout(600)
 await page.screenshot({ path: `${OUT}/01-login.png` })
 
 // login
-await page.fill('input[type=password]', process.env.BBQ_PW || 'Ember&Oak-2417')
+await page.fill('input[type=password]', process.env.BBQ_PW || process.env.BBQ_USER_PASSWORD)
 await page.click('button[type=submit]')
 await page.waitForSelector('.topbar', { timeout: 5000 })
 await page.waitForTimeout(700)

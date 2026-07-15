@@ -9,7 +9,7 @@ const check = (n, c) => { console.log(`${c ? 'PASS' : 'FAIL'}  ${n}`); if (!c) f
 
 await p.goto('http://127.0.0.1:3000')
 await p.evaluate(() => { localStorage.setItem('bbq_view', '3d'); localStorage.removeItem('bbq_fab_pos'); localStorage.removeItem('bbq_chat_pos') })
-await p.fill('input[type=password]', 'Ember&Oak-2417')
+await p.fill('input[type=password]', process.env.BBQ_USER_PASSWORD)
 await p.click('button[type=submit]')
 await p.waitForSelector('.topbar')
 

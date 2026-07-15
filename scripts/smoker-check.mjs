@@ -4,7 +4,7 @@ const p = await b.newPage({ viewport: { width: 1600, height: 950 } })
 p.setDefaultTimeout(90000)
 p.on('pageerror', (e) => console.log('PAGE ERROR:', e.message))
 await p.goto('http://127.0.0.1:3000')
-await p.fill('input[type=password]', 'Ember&Oak-2417')
+await p.fill('input[type=password]', process.env.BBQ_USER_PASSWORD)
 await p.click('button[type=submit]')
 await p.waitForSelector('.topbar')
 // build: 90 grill frame + smoker table + kamado + santa maria attempt
