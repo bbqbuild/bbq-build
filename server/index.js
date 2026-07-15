@@ -370,9 +370,24 @@ async function main() {
   )
 
   // ---- static frontend ----
+  // index.html must never be cached: it names the content-hashed asset files, so a
+  // stale copy pins the browser to the previous deploy's bundle. The hashed assets
+  // themselves are immutable and safe to cache forever.
   const dist = path.join(__dirname, '..', 'web', 'dist')
-  app.use(express.static(dist, { maxAge: '1h', index: 'index.html' }))
-  app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(path.join(dist, 'index.html')))
+  const sendIndex = (_req, res) =>
+    res.set('Cache-Control', 'no-cache').sendFile(path.join(dist, 'index.html'))
+  app.use(
+    express.static(dist, {
+      index: false,
+      setHeaders: (res, filePath) => {
+        res.set(
+          'Cache-Control',
+          filePath.endsWith('.html') ? 'no-cache' : 'public, max-age=31536000, immutable',
+        )
+      },
+    }),
+  )
+  app.get(/^\/(?!api\/).*/, sendIndex)
 
   app.listen(PORT, HOST, () => {
     console.log(`bbq.build listening on http://${HOST}:${PORT} (storage: ${storage.kind})`)
