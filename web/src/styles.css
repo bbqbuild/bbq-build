@@ -2748,3 +2748,30 @@ input[type='range'] {
 .diy-checklist li.done label { opacity: 0.55; }
 .diy-checklist li.done .diy-check-main > span { text-decoration: line-through; }
 .diy-foot { display: flex; gap: 8px; margin: 8px 0 24px; }
+
+/* DIY: shopping links + expandable IKEA step cards */
+.diy-shop-links { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px 10px 34px; background: var(--panel-2); border: 1px solid var(--border); border-top: none; border-radius: 0 0 8px 8px; }
+.diy-shop-links .btn { text-decoration: none; }
+.diy-steps { display: flex; flex-direction: column; gap: 8px; }
+.diy-step { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.diy-step.open { border-color: var(--border-light); }
+.diy-step.done { opacity: 0.65; }
+.diy-step-head { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; cursor: pointer; }
+.diy-step-head input { margin-top: 3px; accent-color: #34d399; }
+.diy-step-title { flex: 1; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.diy-step.done .diy-step-title strong { text-decoration: line-through; }
+.diy-step-title span { color: var(--text-faint); font-size: 12px; }
+.diy-step-caret { color: var(--text-faint); }
+.diy-step-body { padding: 0 12px 14px 34px; display: flex; flex-direction: column; gap: 10px; }
+.diy-step-detail { margin: 0; font-size: 13px; color: var(--text-dim); line-height: 1.55; }
+.diy-step-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.diy-tool-chip { font-size: 12px; padding: 3px 9px; border-radius: 7px; background: var(--panel); border: 1px solid var(--border); color: var(--text-dim); }
+.diy-substeps { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.7; color: var(--text); }
+.diy-step-diagram { position: relative; }
+.diy-step-diagram img { max-width: 480px; width: 100%; border-radius: 10px; background: #fff; }
+.diy-regen { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.55); }
+.diy-qa { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 13px; }
+.diy-qa strong { color: var(--accent); font-size: 12.5px; }
+.diy-qa p { margin: 4px 0 0; color: var(--text-dim); line-height: 1.55; white-space: pre-wrap; }
+.diy-ask { display: flex; gap: 8px; }
+.diy-ask .text-input { flex: 1; margin: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 13px; }

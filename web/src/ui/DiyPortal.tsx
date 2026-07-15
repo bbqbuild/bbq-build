@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { aiDiyPlan, aiDiyQuestions } from '../auth/api'
+import { aiDiyPlan, aiDiyQuestions, aiDiyStepAsk, aiDiyStepImage } from '../auth/api'
+import type { DiyStep } from '../types'
 import { getAppliance } from '../catalog/appliances'
 import { counterMaterial } from '../catalog/frames'
 import { formatPrice, useStore } from '../state/store'
@@ -10,12 +11,16 @@ import { useToasts } from './toast'
  * Compact section descriptor sent to the AI: the group's frames + appliances
  * (with real dims where we have them), counter material and ground.
  */
-function sectionOf(design: Design, group: FrameGroup) {
+function sectionOf(design: Design, group: FrameGroup, unit: string) {
   const frames = group.frameIds
     .map((id) => design.frames.find((f) => f.id === id))
     .filter((f): f is NonNullable<typeof f> => Boolean(f))
   return {
     name: group.name,
+    preferred_units:
+      unit === 'cm'
+        ? 'metric — express all plan measurements in cm/m and kg'
+        : 'imperial — express ALL plan measurements in inches/feet and weights in lb (US home-center shopping: 2ft/4ft/8ft/10ft lengths, gauge sizes)',
     frames: frames.map((f) => ({
       width_cm: f.width,
       depth_cm: RUN_DEPTH,
@@ -97,7 +102,8 @@ function ProjectView({ project }: { project: DiyProject }) {
   const [busy, setBusy] = useState(false)
   const [draft, setDraft] = useState<Record<string, string>>(project.answers ?? {})
   const group = design.groups?.find((g) => g.id === project.groupId)
-  const section = useMemo(() => (group ? sectionOf(design, group) : null), [design, group])
+  const unit = useStore((s) => s.unit)
+  const section = useMemo(() => (group ? sectionOf(design, group, unit) : null), [design, group, unit])
 
   async function loadQuestions() {
     if (!section) return
@@ -244,16 +250,7 @@ function ProjectView({ project }: { project: DiyProject }) {
 
       <section className="diy-section">
         <h3>🛒 Shopping list</h3>
-        <Checklist
-          projectId={project.id}
-          items={plan.materials.map((m, i) => ({
-            key: `m${i}`,
-            label: `${m.item} — ${m.qty}`,
-            sub: m.notes,
-            right: formatPrice(Math.round(m.est_cost_usd)),
-          }))}
-          done={project.done}
-        />
+        <ShoppingList project={project} />
       </section>
 
       <section className="diy-section">
@@ -265,17 +262,13 @@ function ProjectView({ project }: { project: DiyProject }) {
         />
       </section>
 
-      <section className="diy-section">
+      <section className="diy-section diy-section-steps">
         <h3>📋 Build steps</h3>
-        <Checklist
-          projectId={project.id}
-          items={plan.steps.map((s, i) => ({
-            key: s.id,
-            label: `${i + 1}. ${s.title}${s.duration ? ` (${s.duration})` : ''}`,
-            sub: s.detail,
-          }))}
-          done={project.done}
-        />
+        <div className="diy-steps">
+          {plan.steps.map((s, i) => (
+            <StepCard key={s.id} project={project} step={s} index={i} section={section} />
+          ))}
+        </div>
       </section>
 
       {plan.safety.length > 0 && (
@@ -298,6 +291,177 @@ function ProjectView({ project }: { project: DiyProject }) {
         </button>
       </div>
     </>
+  )
+}
+
+/** Shopping list: check off items; click a row to copy the name or jump to stores. */
+function ShoppingList({ project }: { project: DiyProject }) {
+  const toggle = useStore((s) => s.toggleDiyDone)
+  const push = useToasts((s) => s.push)
+  const [openKey, setOpenKey] = useState<string | null>(null)
+  const plan = project.plan!
+  const q = (item: string) => encodeURIComponent(item.replace(/\(.*?\)/g, ' ').replace(/\s+/g, ' ').trim())
+
+  return (
+    <ul className="diy-checklist">
+      {plan.materials.map((m, i) => {
+        const key = `m${i}`
+        const open = openKey === key
+        return (
+          <li key={key} className={project.done?.[key] ? 'done' : ''}>
+            <label onClick={(e) => {
+              // clicking the row (not the checkbox) toggles the store links
+              if ((e.target as HTMLElement).tagName !== 'INPUT') {
+                e.preventDefault()
+                setOpenKey(open ? null : key)
+              }
+            }}>
+              <input type="checkbox" checked={Boolean(project.done?.[key])} onChange={() => toggle(project.id, key)} />
+              <div className="diy-check-main">
+                <span>{m.item} — {m.qty}</span>
+                {m.notes && <em>{m.notes}</em>}
+              </div>
+              <span className="diy-check-right">{formatPrice(Math.round(m.est_cost_usd))}</span>
+            </label>
+            {open && (
+              <div className="diy-shop-links">
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(m.item).then(() => push('Item name copied', 'success'))
+                  }}
+                >
+                  📋 Copy name
+                </button>
+                <a className="btn btn-ghost btn-sm" href={`https://www.homedepot.com/s/${q(m.item)}`} target="_blank" rel="noreferrer">
+                  Home Depot ↗
+                </a>
+                <a className="btn btn-ghost btn-sm" href={`https://www.lowes.com/search?searchTerm=${q(m.item)}`} target="_blank" rel="noreferrer">
+                  Lowe’s ↗
+                </a>
+                <a className="btn btn-ghost btn-sm" href={`https://www.google.com/search?tbm=shop&q=${q(m.item)}`} target="_blank" rel="noreferrer">
+                  Google Shopping ↗
+                </a>
+              </div>
+            )}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+/** One expandable IKEA-style build step: substeps, tools, generated diagram, Q&A. */
+function StepCard({ project, step, index, section }: { project: DiyProject; step: DiyStep; index: number; section: unknown }) {
+  const toggle = useStore((s) => s.toggleDiyDone)
+  const push = useToasts((s) => s.push)
+  const [open, setOpen] = useState(false)
+  const imgKey = `diyimg:${project.id}:${step.id}`
+  const [img, setImg] = useState<string | null>(() => sessionStorage.getItem(imgKey))
+  const [imgBusy, setImgBusy] = useState(false)
+  const [question, setQuestion] = useState('')
+  const [qa, setQa] = useState<{ q: string; a: string }[]>([])
+  const [asking, setAsking] = useState(false)
+  const done = Boolean(project.done?.[step.id])
+
+  async function genImage() {
+    setImgBusy(true)
+    try {
+      const { image } = await aiDiyStepImage(section, step)
+      setImg(image)
+      try {
+        sessionStorage.setItem(imgKey, image)
+      } catch {
+        /* image too large for sessionStorage — keep in memory only */
+      }
+    } catch (e) {
+      push(e instanceof Error ? e.message : 'Diagram generation failed', 'error')
+    } finally {
+      setImgBusy(false)
+    }
+  }
+
+  async function ask(e: React.FormEvent) {
+    e.preventDefault()
+    if (!question.trim() || asking) return
+    const q = question.trim()
+    setAsking(true)
+    try {
+      const { answer } = await aiDiyStepAsk(section, step, q)
+      setQa((list) => [...list, { q, a: answer }])
+      setQuestion('')
+    } catch (err) {
+      push(err instanceof Error ? err.message : 'Could not answer', 'error')
+    } finally {
+      setAsking(false)
+    }
+  }
+
+  return (
+    <div className={`diy-step ${done ? 'done' : ''} ${open ? 'open' : ''}`}>
+      <div className="diy-step-head" onClick={() => setOpen((o) => !o)}>
+        <input type="checkbox" checked={done} onClick={(e) => e.stopPropagation()} onChange={() => toggle(project.id, step.id)} />
+        <div className="diy-step-title">
+          <strong>
+            {index + 1}. {step.title}
+            {step.duration ? ` (${step.duration})` : ''}
+          </strong>
+          {!open && <span>{step.detail}</span>}
+        </div>
+        <span className="diy-step-caret">{open ? '▾' : '▸'}</span>
+      </div>
+      {open && (
+        <div className="diy-step-body">
+          <p className="diy-step-detail">{step.detail}</p>
+          {(step.tools?.length ?? 0) > 0 && (
+            <div className="diy-step-tools">
+              {step.tools!.map((t, i) => (
+                <span key={i} className="diy-tool-chip">🧰 {t}</span>
+              ))}
+            </div>
+          )}
+          {(step.substeps?.length ?? 0) > 0 && (
+            <ol className="diy-substeps">
+              {step.substeps!.map((s, i) => (
+                <li key={i}>{s}</li>
+              ))}
+            </ol>
+          )}
+          <div className="diy-step-diagram">
+            {img ? (
+              <img src={img} alt={`Diagram: ${step.title}`} />
+            ) : (
+              <button className="btn btn-ghost" disabled={imgBusy} onClick={genImage}>
+                {imgBusy ? 'Drawing the diagram…' : '🖼 Generate instruction diagram'}
+              </button>
+            )}
+            {img && (
+              <button className="btn btn-ghost btn-sm diy-regen" disabled={imgBusy} onClick={genImage}>
+                {imgBusy ? '…' : 'Redraw'}
+              </button>
+            )}
+          </div>
+          {qa.map((x, i) => (
+            <div key={i} className="diy-qa">
+              <strong>Q: {x.q}</strong>
+              <p>{x.a}</p>
+            </div>
+          ))}
+          <form className="diy-ask" onSubmit={ask}>
+            <input
+              className="text-input"
+              placeholder="Ask about this step… (e.g. can I screw instead of weld?)"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              disabled={asking}
+            />
+            <button className="btn btn-primary btn-sm" type="submit" disabled={asking || !question.trim()}>
+              {asking ? '…' : 'Ask'}
+            </button>
+          </form>
+        </div>
+      )}
+    </div>
   )
 }
 

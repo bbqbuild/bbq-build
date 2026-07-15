@@ -196,6 +196,14 @@ export async function aiDiyPlan(section: unknown, answers: Record<string, string
   return request('/api/ai/diy-plan', { method: 'POST', body: JSON.stringify({ section, answers }) })
 }
 
+export async function aiDiyStepImage(section: unknown, step: import('../types').DiyStep): Promise<{ image: string }> {
+  return request('/api/ai/diy-step-image', { method: 'POST', body: JSON.stringify({ section, step }) })
+}
+
+export async function aiDiyStepAsk(section: unknown, step: import('../types').DiyStep, question: string): Promise<{ answer: string }> {
+  return request('/api/ai/diy-step-ask', { method: 'POST', body: JSON.stringify({ section, step, question }) })
+}
+
 export async function aiChat(
   messages: { role: 'user' | 'assistant'; content: string }[],
   design: Design,

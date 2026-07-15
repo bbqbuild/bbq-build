@@ -454,7 +454,10 @@ async function diyPlan(section, answers) {
               `estimated costs; the complete tool list (marking optional ones); structural notes driven by the actual ` +
               `appliance weights and cutouts; utility rough-ins (gas/water/drain/electric) needed by these exact ` +
               `appliances; countertop recommendation (material, thickness, overhang, cutouts) honoring the user's ` +
-              `preference; ordered build steps with durations; and safety notes (venting, clearances to combustibles).\n\n` +
+              `preference; ordered build steps with durations; and safety notes (venting, clearances to combustibles). ` +
+              `Every step lists ITS OWN tools and 3-6 IKEA-simple exact actions. ` +
+              `CRITICAL: express every measurement in the homeowner's preferred_units (see the section data) — sizes, ` +
+              `lengths, thicknesses, overhangs, weights, everything.\n\n` +
               `SECTION (cm units):\n${JSON.stringify(section, null, 1)}\n\n` +
               `HOMEOWNER ANSWERS:\n${JSON.stringify(answers ?? {}, null, 1)}`,
           },
@@ -534,8 +537,14 @@ async function diyPlan(section, answers) {
               title: { type: 'string' },
               detail: { type: 'string' },
               duration: { type: 'string' },
+              tools: { type: 'array', items: { type: 'string' }, description: 'exact tools used in THIS step' },
+              substeps: {
+                type: 'array',
+                items: { type: 'string' },
+                description: '3-6 exact actions, IKEA-instruction simple ("Cut two 88 cm tracks", "Screw stud A to track B every 30 cm")',
+              },
             },
-            required: ['id', 'title', 'detail'],
+            required: ['id', 'title', 'detail', 'tools', 'substeps'],
           },
         },
         safety: { type: 'array', items: { type: 'string' } },
@@ -547,6 +556,69 @@ async function diyPlan(section, answers) {
     thinkingBudget: 0,
   })
   return parseJson(text)
+}
+
+// ---------- DIY step diagrams + step Q&A ----------
+
+const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image'
+
+/**
+ * IKEA-style instruction diagram for one build step. Returns a PNG data URL.
+ */
+async function diyStepImage(section, step) {
+  const prompt =
+    `Create ONE instructional assembly diagram in the style of an IKEA manual: clean black line art on a plain white ` +
+    `background, isometric view, no photorealism, no colors except a single amber accent for the part being acted on, ` +
+    `minimal or no text (numbers and arrows only), simple stick-figure hands where helpful, motion arrows showing the action.\n\n` +
+    `The diagram must show exactly this step of building a steel-stud outdoor kitchen section:\n` +
+    `STEP: ${step.title}\n${step.detail}\n` +
+    (step.substeps?.length ? `ACTIONS TO DEPICT:\n- ${step.substeps.join('\n- ')}\n` : '') +
+    `\nCONTEXT (the section being built, cm): ${JSON.stringify(section)}\n` +
+    `Show proportions faithful to the dimensions. One single clear diagram, not a grid of panels.`
+  const res = await fetch(`${GEMINI_BASE}/${IMAGE_MODEL}:generateContent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey() },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+    }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw Object.assign(new Error(`Image generation failed (${res.status}): ${text.slice(0, 200)}`), { status: 502 })
+  }
+  const data = await res.json()
+  const parts = data.candidates?.[0]?.content?.parts ?? []
+  const img = parts.find((p) => p.inlineData?.data)
+  if (!img) throw Object.assign(new Error('No image returned — try again'), { status: 502 })
+  return { image: `data:${img.inlineData.mimeType || 'image/png'};base64,${img.inlineData.data}` }
+}
+
+/** Answer a homeowner's question about one specific build step. */
+async function diyStepAsk(section, step, question) {
+  const { text } = await callGemini({
+    systemInstruction:
+      'You are a patient master builder coaching a DIY homeowner through building a steel-stud outdoor kitchen section. ' +
+      'Answer their question about the CURRENT STEP concretely and briefly (3-6 sentences), with exact measurements, ' +
+      'products or techniques where relevant. If they are about to make a dangerous mistake, warn them clearly.',
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          {
+            text:
+              `SECTION (cm): ${JSON.stringify(section)}\n\nCURRENT STEP: ${step.title}\n${step.detail}\n` +
+              (step.substeps?.length ? `Actions: ${step.substeps.join(' · ')}\n` : '') +
+              `\nQUESTION: ${question}`,
+          },
+        ],
+      },
+    ],
+    temperature: 0.3,
+    maxOutputTokens: 1024,
+    thinkingBudget: 0,
+  })
+  return { answer: text.trim() }
 }
 
 // ---------- chat assistant ----------
@@ -671,4 +743,4 @@ async function chat(messages, design, catalogSummary) {
   return result
 }
 
-module.exports = { searchAppliances, validateBuild, chat, scanUrl, diyQuestions, diyPlan }
+module.exports = { searchAppliances, validateBuild, chat, scanUrl, diyQuestions, diyPlan, diyStepImage, diyStepAsk }

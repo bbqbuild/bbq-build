@@ -196,6 +196,10 @@ export interface DiyStep {
   title: string
   detail: string
   duration?: string
+  /** exact tools used in this step */
+  tools?: string[]
+  /** 3-6 IKEA-simple actions */
+  substeps?: string[]
 }
 
 export interface DiyPlan {

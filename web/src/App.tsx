@@ -164,9 +164,10 @@ export default function App() {
     }
   }, [authed, pendingCarry, save, push])
 
-  // persist the builder session (survives F5) — for both guests and signed-in users
+  // persist the builder session (survives F5) — for both guests and signed-in users.
+  // Also active in the DIY portal: plans/progress are design commits too.
   useEffect(() => {
-    if (route !== 'builder') return
+    if (route !== 'builder' && route !== 'diy') return
     const write = () => {
       const st = useStore.getState()
       localStorage.setItem('bbq_builder_session', JSON.stringify({ design: st.design, savedId: st.savedId, guest }))
@@ -185,9 +186,10 @@ export default function App() {
     if (ready && route !== 'builder' && route !== 'diy' && route !== 'admin') localStorage.removeItem('bbq_builder_session')
   }, [ready, route])
 
-  // auto-save: debounce every design change (no manual save needed)
+  // auto-save: debounce every design change (no manual save needed).
+  // DIY portal included — generated plans and checklist progress must persist.
   useEffect(() => {
-    if (!authed || route !== 'builder') return
+    if (!authed || (route !== 'builder' && route !== 'diy')) return
     let timer: ReturnType<typeof setTimeout> | null = null
     const unsub = useStore.subscribe((s, prev) => {
       if (s.design === prev.design) return

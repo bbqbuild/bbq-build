@@ -238,6 +238,26 @@ async function main() {
   )
 
   aiRouter.post(
+    '/diy-step-image',
+    aiHandler(async (req) => {
+      const { section, step } = req.body ?? {}
+      if (!section || !step) throw Object.assign(new Error('section and step are required'), { status: 400 })
+      return ai.diyStepImage(section, step)
+    }),
+  )
+
+  aiRouter.post(
+    '/diy-step-ask',
+    aiHandler(async (req) => {
+      const { section, step, question } = req.body ?? {}
+      if (!section || !step || typeof question !== 'string' || !question.trim()) {
+        throw Object.assign(new Error('section, step and question are required'), { status: 400 })
+      }
+      return ai.diyStepAsk(section, step, question.trim().slice(0, 500))
+    }),
+  )
+
+  aiRouter.post(
     '/chat',
     aiHandler(async (req) => {
       const { messages, design, catalogSummary } = req.body ?? {}
