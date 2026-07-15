@@ -179,6 +179,18 @@ export const APPLIANCES: ApplianceType[] = [
     icon: '🍺',
   },
   {
+    id: 'drawers1-60',
+    name: 'Single Deep Drawer 60',
+    shortName: 'Drawer ×1',
+    brand: 'EmberWorks',
+    zone: 'base',
+    mount: 'undercounter',
+    minFrameWidth: 40,
+    price: 390,
+    description: 'One full-height soft-close stainless drawer — deep storage for pans, charcoal or pellets.',
+    icon: '🗄️',
+  },
+  {
     id: 'drawers-40',
     name: 'Triple Drawer Stack 40',
     shortName: 'Drawers ×3',

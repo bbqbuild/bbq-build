@@ -72,7 +72,7 @@ export function baseAppliance3d(placed: PlacedAppliance, type: ApplianceType, fr
   }
 
   if (base.startsWith('drawers')) {
-    const n = 3
+    const n = base.startsWith('drawers1') ? 1 : 3
     const gap = 1.2
     const dh = (openH - gap * (n - 1)) / n
     for (let i = 0; i < n; i++) {
@@ -349,32 +349,58 @@ export function topAppliance3d(placed: PlacedAppliance, type: ApplianceType, fra
   if (base.startsWith('santamaria')) {
     const g = new THREE.Group()
     const fireH = 14
-    // firebox with glowing coals
-    const box = new THREE.Mesh(new THREE.BoxGeometry(w, fireH, depth), steel(0.4))
-    box.position.set(0, counterTop + fireH / 2, 0)
-    g.add(box)
+    const builtIn = Boolean(placed.builtIn)
+    // rim of the fire bed: stainless drop-on box, or a masonry surround flush
+    // with the cabinet (built-in look, like a concrete asado station)
+    const boxTop = counterTop + fireH
+    if (builtIn) {
+      const conc = new THREE.MeshStandardMaterial({ color: '#a8a29a', roughness: 0.95 })
+      const surround = new THREE.Mesh(new THREE.BoxGeometry(frameW, fireH, RUN_DEPTH - 2), conc)
+      surround.position.set(0, counterTop + fireH / 2, 0)
+      surround.castShadow = true
+      surround.receiveShadow = true
+      g.add(surround)
+      // recessed fire cavity rim (dark inset so the coals read as sunken)
+      const cavity = new THREE.Mesh(
+        new THREE.BoxGeometry(w - 4, 1.2, depth - 8),
+        new THREE.MeshStandardMaterial({ color: '#17191c', roughness: 0.9 }),
+      )
+      cavity.position.set(0, boxTop + 0.3, 0)
+      g.add(cavity)
+      // raised masonry back wall (heat shield) like a real built-in asado
+      const backH = 34
+      const back = new THREE.Mesh(new THREE.BoxGeometry(frameW, backH, 5), conc)
+      back.position.set(0, boxTop + backH / 2, -(RUN_DEPTH - 2) / 2 + 2.5)
+      back.castShadow = true
+      g.add(back)
+    } else {
+      const box = new THREE.Mesh(new THREE.BoxGeometry(w, fireH, depth), steel(0.4))
+      box.position.set(0, counterTop + fireH / 2, 0)
+      g.add(box)
+    }
     const coals = new THREE.Mesh(
       new THREE.BoxGeometry(w - 8, 3, depth - 8),
       new THREE.MeshStandardMaterial({ color: '#c2410c', emissive: '#ff7a1a', emissiveIntensity: 0.85, roughness: 0.9 }),
     )
-    coals.position.set(0, counterTop + fireH - 1.5, 0)
+    coals.position.set(0, boxTop - (builtIn ? 2.5 : 1.5), 0)
     g.add(coals)
     // two side posts
     const postMat = new THREE.MeshStandardMaterial({ color: '#3d434a', roughness: 0.6, metalness: 0.5 })
     const postH = h - fireH
+    const postZ = builtIn ? -depth / 2 + 6 : -depth / 2 + 3
     for (const sx of [-w / 2 + 3, w / 2 - 3]) {
       const post = new THREE.Mesh(new THREE.BoxGeometry(3, postH, 3), postMat)
-      post.position.set(sx, counterTop + fireH + postH / 2, -depth / 2 + 3)
+      post.position.set(sx, boxTop + postH / 2, postZ)
       post.castShadow = true
       g.add(post)
     }
     // crossbar
     const cross = new THREE.Mesh(new THREE.BoxGeometry(w, 3, 3), postMat)
-    cross.position.set(0, counterTop + h - 1.5, -depth / 2 + 3)
+    cross.position.set(0, counterTop + h - 1.5, postZ)
     g.add(cross)
     // crank wheel on the right post
     const wheel = new THREE.Mesh(new THREE.TorusGeometry(5, 1, 8, 20), steel(0.35))
-    wheel.position.set(w / 2 - 3, counterTop + fireH + postH * 0.5, -depth / 2 + 6)
+    wheel.position.set(w / 2 - 3, boxTop + postH * 0.5, postZ + 3)
     g.add(wheel)
     // raised grate on chains (liftable)
     const gratePivot = new THREE.Group()
@@ -383,10 +409,10 @@ export function topAppliance3d(placed: PlacedAppliance, type: ApplianceType, fra
     gratePivot.add(grate)
     for (const sx of [-w / 2 + 6, w / 2 - 6]) {
       const chain = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, postH * 0.5, 6), postMat)
-      chain.position.set(sx, postH * 0.25, -depth / 2 + 4)
+      chain.position.set(sx, postH * 0.25, postZ + 1)
       gratePivot.add(chain)
     }
-    const grateY = counterTop + fireH + postH * 0.4
+    const grateY = boxTop + postH * 0.4
     gratePivot.position.set(0, grateY, 0)
     g.add(gratePivot)
     tag(g)

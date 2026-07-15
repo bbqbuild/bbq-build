@@ -144,9 +144,30 @@ function SummaryPanel() {
           <dd className="accent">{formatPrice(total)}</dd>
         </div>
       </dl>
+      {(design.groups?.length ?? 0) > 0 && (
+        <section className="slot">
+          <h3>Sections <span className="h-hint">groups for DIY & bulk edits</span></h3>
+          <ul className="group-list">
+            {design.groups!.map((g) => (
+              <li key={g.id}>
+                <button className="group-list-name" onClick={() => useStore.getState().select({ kind: 'group', id: g.id })}>
+                  ⛶ {g.name} <span>({g.frameIds.length})</span>
+                </button>
+                <button
+                  className="btn btn-icon"
+                  title="Ungroup (frames stay; any DIY project for it is removed)"
+                  onClick={() => confirm(`Ungroup “${g.name}”?`) && useStore.getState().ungroup(g.id)}
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <p className="hint">
         Click a frame in the canvas to kit it out, drag frames to reorder, or drag appliances straight from the
-        catalog onto a frame.
+        catalog onto a frame. Shift-click frames to group a section.
       </p>
       {design.frames.length > 0 && (
         <button className="btn btn-danger-ghost" onClick={() => confirm('Remove all frames and appliances?') && clearAll()}>
@@ -633,8 +654,11 @@ function AppliancePanel({ placedId }: { placedId: string }) {
   const flipAppliance = useStore((s) => s.flipAppliance)
   const select = useStore((s) => s.select)
   const unit = useStore((s) => s.unit)
+  const setBuiltIn = useStore((s) => s.setBuiltIn)
   const placed = design.appliances.find((a) => a.id === placedId)!
   const type: ApplianceType = getAppliance(placed.typeId)
+  // open fire grills can be enclosed in a masonry surround (built-in asado look)
+  const canBuiltIn = /^santamaria/.test(type.paintAs ?? type.id)
   const frameIdx = design.frames.findIndex((f) => f.id === placed.frameId)
   const frame = design.frames[frameIdx]
   // single-door units can flip their hinge side
@@ -689,6 +713,12 @@ function AppliancePanel({ placedId }: { placedId: string }) {
         <label className="check-row" title="Which side the door is hinged on">
           <input type="checkbox" checked={Boolean(placed.flipped)} onChange={() => flipAppliance(placed.id)} />
           <span>Hinge on the right</span>
+        </label>
+      )}
+      {canBuiltIn && (
+        <label className="check-row" title="Enclose the fire bed in a masonry surround flush with the cabinet, with a raised back heat-shield — the classic built-in asado look">
+          <input type="checkbox" checked={Boolean(placed.builtIn)} onChange={(e) => setBuiltIn(placed.id, e.target.checked)} />
+          <span>Built-in masonry surround</span>
         </label>
       )}
       <button className="btn btn-ghost" onClick={() => select({ kind: 'frame', id: placed.frameId })}>

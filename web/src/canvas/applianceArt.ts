@@ -467,6 +467,7 @@ export const PAINTERS: Record<string, Painter> = {
   'kegerator-60': fridgeish('keg'),
   'icemaker-60': fridgeish('ice'),
   'drawers-40': drawers,
+  'drawers1-60': drawers,
   'doors-60': doorsPainter(2),
   'door-40': doorsPainter(1),
   'trash-40': trash,

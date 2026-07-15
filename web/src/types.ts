@@ -59,6 +59,8 @@ export interface PlacedAppliance {
   zone: Zone
   /** Door/lid hinge on the right instead of the default left. */
   flipped?: boolean
+  /** enclose in a masonry surround flush with the cabinet (santa maria etc.) */
+  builtIn?: boolean
 }
 
 export interface Design {

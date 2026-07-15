@@ -2775,3 +2775,17 @@ input[type='range'] {
 .diy-qa p { margin: 4px 0 0; color: var(--text-dim); line-height: 1.55; white-space: pre-wrap; }
 .diy-ask { display: flex; gap: 8px; }
 .diy-ask .text-input { flex: 1; margin: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 13px; }
+
+.group-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.group-list li { display: flex; align-items: center; gap: 4px; }
+.group-list-name {
+  flex: 1; display: flex; align-items: center; gap: 6px; text-align: left;
+  padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--panel-2); color: var(--text); font-size: 13px; cursor: pointer;
+}
+.group-list-name:hover { border-color: var(--accent); }
+.group-list-name span { color: var(--text-faint); font-size: 12px; }
+.diy-nav-row { display: flex; align-items: center; gap: 2px; }
+.diy-nav-row > button:first-child { flex: 1; }
+.diy-nav-del { opacity: 0; flex-shrink: 0; }
+.diy-nav-row:hover .diy-nav-del { opacity: 1; }

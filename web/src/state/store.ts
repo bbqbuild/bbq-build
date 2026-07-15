@@ -5,6 +5,7 @@ import { getAppliance, fitsFrame, registerCustomAppliances } from '../catalog/ap
 import { checkPlacement } from '../catalog/compat'
 import type { ApplianceType } from '../types'
 import { frameSpecByWidth, GROUND_TYPES, counterMaterial as counterMaterialFor } from '../catalog/frames'
+import { computeScene } from '../canvas/scene'
 import { formatLen, type Unit } from '../units'
 
 export function newId(prefix: string): string {
@@ -24,6 +25,19 @@ export function emptyDesign(): Design {
 
 /** Deep-clone a design (plain JSON data). */
 const clone = (d: Design): Design => JSON.parse(JSON.stringify(d))
+
+/**
+ * Grow the ground platform (never shrink) so the kitchen always fits inside
+ * the designated space — adding cabinets refits the space instead of letting
+ * frames hang off the slab.
+ */
+function ensureGroundFits(d: Design) {
+  const sc = computeScene(d)
+  const needW = Math.ceil(sc.extents.x1 - sc.extents.x0) + 20
+  const needD = Math.ceil(sc.extents.z1) + 45
+  if (needW > d.ground.width) d.ground.width = Math.min(1200, needW)
+  if (needD > (d.ground.depth ?? 0)) d.ground.depth = Math.min(1200, needD)
+}
 
 export type DragPayload =
   | { kind: 'appliance'; typeId: string }
@@ -83,6 +97,7 @@ interface BuilderState {
   toggleMeasure: () => void
   toggleOpen: () => void
   flipAppliance: (id: string) => void
+  setBuiltIn: (id: string, on: boolean) => void
   addCustomAppliance: (t: ApplianceType) => void
   removeCustomAppliance: (id: string) => void
   setDragging: (d: DragPayload | null) => void
@@ -285,6 +300,11 @@ export const useStore = create<BuilderState>((set, get) => {
         const a = d.appliances.find((a) => a.id === id)
         if (a) a.flipped = !a.flipped
       }),
+    setBuiltIn: (id, on) =>
+      commit((d) => {
+        const a = d.appliances.find((a) => a.id === id)
+        if (a) a.builtIn = on || undefined
+      }),
     toggleChat: () =>
       set((s) => {
         localStorage.setItem('bbq_chat', s.chatOpen ? 'closed' : 'open')
@@ -359,6 +379,7 @@ export const useStore = create<BuilderState>((set, get) => {
         d.island = true
         d.islandCorner = true
         d.islandCornerStyle = style
+        ensureGroundFits(d)
       }),
 
     setIslandCornerStyle: (style) =>
@@ -391,6 +412,7 @@ export const useStore = create<BuilderState>((set, get) => {
         } else {
           d.frames.splice(runIdxs[Math.max(0, index)], 0, frame)
         }
+        ensureGroundFits(d)
       })
       set({ selection: { kind: 'frame', id } })
       return id
@@ -400,6 +422,7 @@ export const useStore = create<BuilderState>((set, get) => {
       commit((d) => {
         const f = d.frames.find((f) => f.id === id)
         if (f) f.width = Math.max(20, Math.min(200, Math.round(width * 100) / 100))
+        ensureGroundFits(d)
       }, `fw:${id}`),
 
     setFrameHeight: (id, height) =>
@@ -437,6 +460,7 @@ export const useStore = create<BuilderState>((set, get) => {
         d.layout = nextLayout
         d.corners = d.corners ?? {}
         d.corners[side!] = { finish, style }
+        ensureGroundFits(d)
       })
       set({ activeRun: wing })
       return wing
@@ -545,6 +569,7 @@ export const useStore = create<BuilderState>((set, get) => {
         const f = d.frames.find((x) => x.id === id)!
         f.width += neighbor.width
         d.frames = d.frames.filter((x) => x.id !== neighbor.id)
+        ensureGroundFits(d)
       })
       set({ selection: { kind: 'frame', id } })
       return true
@@ -593,6 +618,7 @@ export const useStore = create<BuilderState>((set, get) => {
         } else {
           d.frames.splice(runIdxs[clamped], 0, f)
         }
+        ensureGroundFits(d)
       }),
 
     setFrameFinish: (id, finish) =>

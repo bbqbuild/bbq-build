@@ -40,6 +40,7 @@ function sectionOf(design: Design, group: FrameGroup, unit: string) {
           needs_width_cm: t.minFrameWidth,
           ...(t.dims ? { cutout_cm: t.dims } : {}),
           ...(t.url ? { product_url: t.url } : {}),
+          ...(a.builtIn ? { built_in_masonry_surround: true } : {}),
         }
       }),
     counter_material_current: counterMaterial(design.counterMaterial).name,
@@ -71,10 +72,24 @@ export function DiyPortal({ onExit, initialProjectId }: { onExit: () => void; in
       <div className="admin-layout">
         <nav className="admin-nav">
           {projects.map((p) => (
-            <button key={p.id} className={p.id === openId ? 'active' : ''} onClick={() => setOpenId(p.id)}>
-              <span>🛠 {p.name}</span>
-              {p.plan && <span className="admin-nav-badge">{progressOf(p)}%</span>}
-            </button>
+            <div key={p.id} className="diy-nav-row">
+              <button className={p.id === openId ? 'active' : ''} onClick={() => setOpenId(p.id)}>
+                <span>🛠 {p.name}</span>
+                {p.plan && <span className="admin-nav-badge">{progressOf(p)}%</span>}
+              </button>
+              <button
+                className="btn btn-icon diy-nav-del"
+                title="Delete this DIY project (plan + progress)"
+                onClick={() => {
+                  if (confirm(`Delete the DIY project “${p.name}”? The plan and progress will be removed.`)) {
+                    useStore.getState().removeDiyProject(p.id)
+                    if (openId === p.id) setOpenId(null)
+                  }
+                }}
+              >
+                ✕
+              </button>
+            </div>
           ))}
           {!projects.length && <p className="hint diy-nav-hint">No projects yet. In the designer, shift-click frames → Group → DIY.</p>}
         </nav>

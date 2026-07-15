@@ -26,7 +26,7 @@ const gid = (p: string) => `gen_${p}_${(seq += 1)}`
 const COOK = /^(grill|santamaria|egg|primo|pizza|gozney|taboon)/
 const PREP = /^(griddle|burner|sink)/
 const COLD = /^(fridge|kegerator|icemaker|icebin)/
-const LOWERED_BASE_OK = new Set(['woodstore-40', 'drawers-40'])
+const LOWERED_BASE_OK = new Set(['woodstore-40', 'drawers-40', 'drawers1-60'])
 
 interface FrameDef {
   width: number

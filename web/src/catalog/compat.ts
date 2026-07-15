@@ -33,7 +33,7 @@ export interface PlacementCheck {
 }
 
 /** Base units that fit a lowered smoker table's open shelf. */
-const LOWERED_BASE_OK = new Set(['woodstore-40', 'drawers-40'])
+const LOWERED_BASE_OK = new Set(['woodstore-40', 'drawers-40', 'drawers1-60'])
 
 /** Full validation for placing `type` into `frame`, considering the other zone's occupant. */
 export function checkPlacement(design: Design, frame: Frame, type: ApplianceType): PlacementCheck {
