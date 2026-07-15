@@ -27,7 +27,8 @@ export function SizeRow({
   const display = text ?? lenInputValue(cm, unit, inchesOnly)
   const commit = (raw: string) => {
     const parsed = parseLen(raw, unit)
-    if (parsed !== null) onCommit(Math.max(min, Math.min(max, Math.round(parsed))))
+    // keep sub-cm precision so imperial entries round-trip exactly (36" = 91.44 cm)
+    if (parsed !== null) onCommit(Math.max(min, Math.min(max, Math.round(parsed * 100) / 100)))
   }
   return (
     <div className="slider-row">

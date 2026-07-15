@@ -328,8 +328,8 @@ export const useStore = create<BuilderState>((set, get) => {
       commit(
         (d) => {
           if (patch.type) d.ground.type = patch.type
-          if (patch.width !== undefined) d.ground.width = Math.max(100, Math.min(1200, Math.round(patch.width)))
-          if (patch.depth !== undefined) d.ground.depth = Math.max(120, Math.min(1200, Math.round(patch.depth)))
+          if (patch.width !== undefined) d.ground.width = Math.max(100, Math.min(1200, Math.round(patch.width * 100) / 100))
+          if (patch.depth !== undefined) d.ground.depth = Math.max(120, Math.min(1200, Math.round(patch.depth * 100) / 100))
         },
         patch.width !== undefined ? 'ground-w' : patch.depth !== undefined ? 'ground-d' : undefined,
       ),
@@ -399,13 +399,13 @@ export const useStore = create<BuilderState>((set, get) => {
     setFrameWidth: (id, width) =>
       commit((d) => {
         const f = d.frames.find((f) => f.id === id)
-        if (f) f.width = Math.max(20, Math.min(200, Math.round(width)))
+        if (f) f.width = Math.max(20, Math.min(200, Math.round(width * 100) / 100))
       }, `fw:${id}`),
 
     setFrameHeight: (id, height) =>
       commit((d) => {
         const f = d.frames.find((f) => f.id === id)
-        if (f) f.height = Math.max(45, Math.min(140, Math.round(height)))
+        if (f) f.height = Math.max(45, Math.min(140, Math.round(height * 100) / 100))
       }, `fh:${id}`),
 
     activeRun: 'back',
@@ -480,7 +480,7 @@ export const useStore = create<BuilderState>((set, get) => {
 
     setAllHeights: (height) =>
       commit((d) => {
-        const h = Math.max(45, Math.min(140, Math.round(height)))
+        const h = Math.max(45, Math.min(140, Math.round(height * 100) / 100))
         for (const f of d.frames) f.height = h
       }, 'all-heights'),
 
