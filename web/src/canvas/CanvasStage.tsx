@@ -192,7 +192,11 @@ export function CanvasStage() {
     const s = useStore.getState()
 
     if (!p.moved) {
-      if (!p.hit) s.select({ kind: 'none' })
+      if (p.hit?.kind === 'frame' && e.shiftKey) s.toggleMultiSelect(p.hit.id)
+      else if (p.hit?.kind === 'appliance' && e.shiftKey) {
+        const placed = s.design.appliances.find((a) => a.id === (p.hit as { id: string }).id)
+        if (placed) s.toggleMultiSelect(placed.frameId)
+      } else if (!p.hit) s.select({ kind: 'none' })
       else if (p.hit.kind === 'ground') s.select({ kind: 'ground' })
       else if (p.hit.kind === 'corner') s.select({ kind: 'corner', id: p.hit.id })
       else if (p.hit.kind === 'frame') s.select({ kind: 'frame', id: p.hit.id })

@@ -393,6 +393,17 @@ function drawSelection(ctx: Ctx, s: RenderState) {
       ctx.closePath()
       ctx.stroke()
     }
+  } else if (sel.kind === 'multi' || sel.kind === 'group') {
+    const ids =
+      sel.kind === 'multi' ? sel.ids : (s.design.groups?.find((g) => g.id === sel.id)?.frameIds ?? [])
+    const plans = framePlans(s.scene)
+    for (const id of ids) {
+      const f = plans.find((p) => p.id === id)
+      if (f) {
+        roundRectPath(ctx, f.x - 0.5, f.z - 0.5, f.w + 1, f.d + 1, 2)
+        ctx.stroke()
+      }
+    }
   }
 }
 

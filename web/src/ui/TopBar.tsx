@@ -142,6 +142,15 @@ export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onOpe
         <button className="btn btn-ghost" onClick={onOpenValidate} title="AI feasibility review of your build">
           🛡 AI Check
         </button>
+        {(design.diy?.length ?? 0) > 0 && (
+          <button
+            className="btn btn-ghost"
+            title="Your DIY build projects"
+            onClick={() => window.dispatchEvent(new CustomEvent('bbq:diy', { detail: {} }))}
+          >
+            🛠 DIY
+          </button>
+        )}
         <button className="btn btn-ghost" onClick={onOpenPresets}>
           Presets
         </button>

@@ -188,6 +188,14 @@ export async function aiValidate(design: Design, catalogSummary: string): Promis
   return request('/api/ai/validate', { method: 'POST', body: JSON.stringify({ design, catalogSummary }) })
 }
 
+export async function aiDiyQuestions(section: unknown): Promise<{ questions: import('../types').DiyQuestion[] }> {
+  return request('/api/ai/diy-questions', { method: 'POST', body: JSON.stringify({ section }) })
+}
+
+export async function aiDiyPlan(section: unknown, answers: Record<string, string>): Promise<import('../types').DiyPlan> {
+  return request('/api/ai/diy-plan', { method: 'POST', body: JSON.stringify({ section, answers }) })
+}
+
 export async function aiChat(
   messages: { role: 'user' | 'assistant'; content: string }[],
   design: Design,

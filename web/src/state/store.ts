@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { CornerId, Design, FrameFinish, FrameWidth, GroundType, LayoutShape, PlacedAppliance, RunId, Selection, Zone } from '../types'
+import type { CornerId, Design, DiyProject, FrameFinish, FrameWidth, GroundType, LayoutShape, PlacedAppliance, RunId, Selection, Zone } from '../types'
 import { FRAME_WIDTHS, cornerFor, runsForLayout } from '../types'
 import { getAppliance, fitsFrame, registerCustomAppliances } from '../catalog/appliances'
 import { checkPlacement } from '../catalog/compat'
@@ -68,6 +68,16 @@ interface BuilderState {
   setSharedCatalog: (list: ApplianceType[]) => void
 
   select: (s: Selection) => void
+  /** shift-click: toggle a frame in/out of a multi-selection */
+  toggleMultiSelect: (frameId: string) => void
+  createGroup: (name: string, frameIds: string[]) => string | null
+  renameGroup: (id: string, name: string) => void
+  ungroup: (id: string) => void
+  /** create (or return the existing) DIY project for a group */
+  startDiyProject: (groupId: string) => string | null
+  updateDiyProject: (id: string, patch: Partial<DiyProject>) => void
+  toggleDiyDone: (id: string, key: string) => void
+  removeDiyProject: (id: string) => void
   toggleChat: () => void
   toggleView: () => void
   toggleMeasure: () => void
@@ -188,6 +198,80 @@ export const useStore = create<BuilderState>((set, get) => {
       resetCoalesce()
       set({ selection })
     },
+
+    toggleMultiSelect: (frameId) => {
+      const { selection } = get()
+      if (selection.kind === 'multi') {
+        const ids = selection.ids.includes(frameId)
+          ? selection.ids.filter((i) => i !== frameId)
+          : [...selection.ids, frameId]
+        set({ selection: ids.length === 0 ? { kind: 'none' } : ids.length === 1 ? { kind: 'frame', id: ids[0] } : { kind: 'multi', ids } })
+      } else if (selection.kind === 'frame' && selection.id !== frameId) {
+        set({ selection: { kind: 'multi', ids: [selection.id, frameId] } })
+      } else {
+        set({ selection: { kind: 'frame', id: frameId } })
+      }
+    },
+
+    createGroup: (name, frameIds) => {
+      const { design } = get()
+      const valid = frameIds.filter((id) => design.frames.some((f) => f.id === id))
+      if (valid.length < 1) return null
+      const id = newId('g')
+      commit((d) => {
+        // a frame belongs to at most one group — steal from any previous group
+        d.groups = (d.groups ?? []).map((g) => ({ ...g, frameIds: g.frameIds.filter((f) => !valid.includes(f)) })).filter((g) => g.frameIds.length)
+        d.groups.push({ id, name: name.trim() || 'My section', frameIds: valid })
+      })
+      set({ selection: { kind: 'group', id } })
+      return id
+    },
+
+    renameGroup: (id, name) =>
+      commit((d) => {
+        const g = d.groups?.find((x) => x.id === id)
+        if (g) g.name = name.trim() || g.name
+      }, 'group-name'),
+
+    ungroup: (id) => {
+      commit((d) => {
+        d.groups = (d.groups ?? []).filter((g) => g.id !== id)
+        d.diy = (d.diy ?? []).filter((p) => p.groupId !== id)
+      })
+      set({ selection: { kind: 'none' } })
+    },
+
+    startDiyProject: (groupId) => {
+      const { design } = get()
+      const group = design.groups?.find((g) => g.id === groupId)
+      if (!group) return null
+      const existing = design.diy?.find((p) => p.groupId === groupId)
+      if (existing) return existing.id
+      const id = newId('diy')
+      commit((d) => {
+        d.diy = [...(d.diy ?? []), { id, groupId, name: group.name, status: 'questions' }]
+      })
+      return id
+    },
+
+    updateDiyProject: (id, patch) =>
+      commit((d) => {
+        const i = (d.diy ?? []).findIndex((p) => p.id === id)
+        if (i >= 0) d.diy![i] = { ...d.diy![i], ...patch }
+      }),
+
+    toggleDiyDone: (id, key) =>
+      commit((d) => {
+        const p = (d.diy ?? []).find((x) => x.id === id)
+        if (p) {
+          p.done = { ...(p.done ?? {}), [key]: !(p.done ?? {})[key] }
+        }
+      }, `diy-done:${id}`),
+
+    removeDiyProject: (id) =>
+      commit((d) => {
+        d.diy = (d.diy ?? []).filter((p) => p.id !== id)
+      }),
     toggleView: () =>
       set((s) => {
         const viewMode = s.viewMode === '3d' ? '2d' : '3d'
@@ -441,6 +525,8 @@ export const useStore = create<BuilderState>((set, get) => {
       commit((d) => {
         d.frames = d.frames.filter((f) => f.id !== id)
         d.appliances = d.appliances.filter((a) => a.frameId !== id)
+        d.groups = (d.groups ?? []).map((g) => ({ ...g, frameIds: g.frameIds.filter((f) => f !== id) })).filter((g) => g.frameIds.length)
+        d.diy = (d.diy ?? []).filter((p) => d.groups?.some((g) => g.id === p.groupId))
       })
       set({ selection: { kind: 'none' } })
     },

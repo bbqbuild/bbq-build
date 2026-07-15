@@ -81,6 +81,10 @@ export function Stage3D() {
     const selectBox = new THREE.Box3Helper(new THREE.Box3(), ACCENT)
     selectBox.visible = false
     scene.add(selectBox)
+    // multi-selection / group member boxes (rebuilt when the selection changes)
+    const multiSel = new THREE.Group()
+    scene.add(multiSel)
+    let multiSelJson = ''
     const dropBox = new THREE.Box3Helper(new THREE.Box3(), 0xfbbf24)
     dropBox.visible = false
     scene.add(dropBox)
@@ -317,7 +321,14 @@ export function Stage3D() {
       if (downPos && Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y) < 5) {
         const hit = pick(e.clientX, e.clientY)
         const ud = hit?.object.userData
-        if (!ud) s.select({ kind: 'none' })
+        if (ud?.kind === 'frame' && e.shiftKey) {
+          // shift-click builds a multi-selection (for grouping)
+          s.toggleMultiSelect(ud.id)
+        } else if (ud?.kind === 'appliance' && e.shiftKey) {
+          // shift on an appliance selects its frame into the multi-selection
+          const placed = s.design.appliances.find((a) => a.id === ud.id)
+          if (placed) s.toggleMultiSelect(placed.frameId)
+        } else if (!ud) s.select({ kind: 'none' })
         else if (ud.kind === 'corner') s.select({ kind: 'corner', id: ud.id })
         else if (ud.kind === 'ground') s.select({ kind: 'ground' })
         else if (ud.kind === 'frame') s.select({ kind: 'frame', id: ud.id })
@@ -554,6 +565,34 @@ export function Stage3D() {
         if (found) (selectBox.box as THREE.Box3).copy(box.expandByScalar(1.5))
       } else {
         selectBox.visible = false
+      }
+
+      // multi / group highlight: one box per member frame
+      {
+        const memberIds =
+          s.selection.kind === 'multi'
+            ? s.selection.ids
+            : s.selection.kind === 'group'
+              ? (s.design.groups?.find((g) => g.id === (s.selection as { id: string }).id)?.frameIds ?? [])
+              : []
+        const key = memberIds.join(',') + '|' + designJson.length
+        if (key !== multiSelJson) {
+          multiSelJson = key
+          multiSel.clear()
+          if (kitchen && memberIds.length) {
+            for (const fid of memberIds) {
+              const box = new THREE.Box3()
+              let found = false
+              kitchen.group.traverse((o) => {
+                if (o.userData.kind === 'frame' && o.userData.id === fid) {
+                  box.union(new THREE.Box3().setFromObject(o))
+                  found = true
+                }
+              })
+              if (found) multiSel.add(new THREE.Box3Helper(box.expandByScalar(1.5), ACCENT))
+            }
+          }
+        }
       }
 
       updateXray()

@@ -19,13 +19,14 @@ import { ValidateModal } from './ui/ValidateModal'
 import { DropDecisionModal } from './ui/DropDecisionModal'
 import { NewKitchenWizard } from './ui/NewKitchenWizard'
 import { AdminPanel } from './ui/AdminPanel'
+import { DiyPortal } from './ui/DiyPortal'
 import { useToasts } from './ui/toast'
 import type { Design } from './types'
 import type { SavedDesign } from './types'
 
 type Modal = 'none' | 'presets' | 'spec' | 'designs' | 'validate'
-// landing → public cover; auth → login/signup; home → dashboard; builder → editor; admin → back-office
-type Route = 'landing' | 'auth' | 'home' | 'builder' | 'admin'
+// landing → public cover; auth → login/signup; home → dashboard; builder → editor; admin → back-office; diy → project portal
+type Route = 'landing' | 'auth' | 'home' | 'builder' | 'admin' | 'diy'
 
 export default function App() {
   const [authed, setAuthed] = useState<boolean>(false)
@@ -37,6 +38,7 @@ export default function App() {
   const [modal, setModal] = useState<Modal>('none')
   const [wizard, setWizard] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [diyProjectId, setDiyProjectId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const viewMode = useStore((s) => s.viewMode)
   const push = useToasts((s) => s.push)
@@ -112,6 +114,16 @@ export default function App() {
     })
   }, [])
 
+  // "DIY this section" from the inspector opens the DIY portal on that project
+  useEffect(() => {
+    const onDiy = (e: Event) => {
+      setDiyProjectId((e as CustomEvent).detail?.projectId ?? null)
+      setRoute('diy')
+    }
+    window.addEventListener('bbq:diy', onDiy)
+    return () => window.removeEventListener('bbq:diy', onDiy)
+  }, [])
+
   // admin gets an extra panel to vet appliances + manage build companies
   useEffect(() => {
     if (!authed) {
@@ -167,9 +179,10 @@ export default function App() {
   }, [route, guest])
 
   // once away from the builder, drop the persisted session (but not during
-  // initial hydration — that would delete it before we can restore it)
+  // initial hydration — that would delete it before we can restore it, and not
+  // for side-trips like DIY/admin where the design stays open underneath)
   useEffect(() => {
-    if (ready && route !== 'builder') localStorage.removeItem('bbq_builder_session')
+    if (ready && route !== 'builder' && route !== 'diy' && route !== 'admin') localStorage.removeItem('bbq_builder_session')
   }, [ready, route])
 
   // auto-save: debounce every design change (no manual save needed)
@@ -330,6 +343,15 @@ export default function App() {
     return (
       <>
         <AdminPanel onExit={() => setRoute(authed ? 'home' : 'landing')} />
+        <Toasts />
+      </>
+    )
+  }
+
+  if (route === 'diy') {
+    return (
+      <>
+        <DiyPortal onExit={() => setRoute('builder')} initialProjectId={diyProjectId} />
         <Toasts />
       </>
     )

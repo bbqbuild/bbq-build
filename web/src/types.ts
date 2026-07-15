@@ -86,6 +86,10 @@ export interface Design {
   pergola?: boolean
   /** AI-sourced real products added to this design's catalog. */
   custom?: ApplianceType[]
+  /** named frame groups (used by the DIY feature) */
+  groups?: FrameGroup[]
+  /** DIY build projects, one per group */
+  diy?: DiyProject[]
 }
 
 /** Resolve the corner unit for a side, honoring removal and defaults. */
@@ -164,6 +168,62 @@ export type Selection =
   | { kind: 'appliance'; id: string }
   | { kind: 'corner'; id: CornerId }
   | { kind: 'counter' }
+  | { kind: 'multi'; ids: string[] }
+  | { kind: 'group'; id: string }
+
+/** A named set of frames — the unit for DIY projects (and future bulk edits). */
+export interface FrameGroup {
+  id: string
+  name: string
+  frameIds: string[]
+}
+
+export interface DiyQuestion {
+  id: string
+  q: string
+  hint?: string
+}
+
+export interface DiyMaterial {
+  item: string
+  qty: string
+  est_cost_usd: number
+  notes?: string
+}
+
+export interface DiyStep {
+  id: string
+  title: string
+  detail: string
+  duration?: string
+}
+
+export interface DiyPlan {
+  summary: string
+  skill_level: string
+  est_days: number
+  total_est_cost_usd: number
+  structure_notes: string[]
+  utilities: { type: string; requirement: string }[]
+  counter: { recommendation: string; thickness: string; notes: string }
+  materials: DiyMaterial[]
+  tools: { tool: string; optional?: boolean }[]
+  steps: DiyStep[]
+  safety: string[]
+}
+
+/** A DIY build project for a group of frames, tracked in the DIY portal. */
+export interface DiyProject {
+  id: string
+  groupId: string
+  name: string
+  status: 'questions' | 'ready'
+  questions?: DiyQuestion[]
+  answers?: Record<string, string>
+  plan?: DiyPlan
+  /** checked-off material/tool/step keys */
+  done?: Record<string, boolean>
+}
 
 export const FRAME_WIDTHS: FrameWidth[] = [40, 60, 80, 90]
 

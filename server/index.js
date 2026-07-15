@@ -220,6 +220,24 @@ async function main() {
   )
 
   aiRouter.post(
+    '/diy-questions',
+    aiHandler(async (req) => {
+      const { section } = req.body ?? {}
+      if (!section || typeof section !== 'object') throw Object.assign(new Error('section is required'), { status: 400 })
+      return ai.diyQuestions(section)
+    }),
+  )
+
+  aiRouter.post(
+    '/diy-plan',
+    aiHandler(async (req) => {
+      const { section, answers } = req.body ?? {}
+      if (!section || typeof section !== 'object') throw Object.assign(new Error('section is required'), { status: 400 })
+      return ai.diyPlan(section, answers ?? {})
+    }),
+  )
+
+  aiRouter.post(
     '/chat',
     aiHandler(async (req) => {
       const { messages, design, catalogSummary } = req.body ?? {}

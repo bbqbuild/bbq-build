@@ -27,11 +27,95 @@ export function Inspector() {
     content = <CounterPanel />
   } else if (selection.kind === 'ground') {
     content = <GroundPanel />
+  } else if (selection.kind === 'multi') {
+    content = <MultiPanel ids={selection.ids} />
+  } else if (selection.kind === 'group') {
+    const group = design.groups?.find((g) => g.id === selection.id)
+    content = group ? <GroupPanel group={group} /> : <SummaryPanel />
   } else {
     content = <SummaryPanel />
   }
 
   return <aside className="inspector">{content}</aside>
+}
+
+function MultiPanel({ ids }: { ids: string[] }) {
+  const design = useStore((s) => s.design)
+  const createGroup = useStore((s) => s.createGroup)
+  const select = useStore((s) => s.select)
+  const unit = useStore((s) => s.unit)
+  const [name, setName] = useState('')
+  const frames = ids.map((id) => design.frames.find((f) => f.id === id)).filter(Boolean)
+  const totalW = frames.reduce((s, f) => s + (f?.width ?? 0), 0)
+
+  return (
+    <div className="panel">
+      <h2>
+        {ids.length} frames selected <span className="h-hint">{formatLen(totalW, unit)} total</span>
+      </h2>
+      <p className="hint">Shift-click frames to add or remove them, then group the section to work on it as one — or start a DIY build project for it.</p>
+      <input
+        className="text-input"
+        placeholder="Section name (e.g. Grill island)"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
+      <button className="btn btn-primary" onClick={() => createGroup(name || 'My section', ids)}>
+        ⛶ Group these frames
+      </button>
+      <button className="btn btn-ghost" onClick={() => select({ kind: 'none' })}>
+        Clear selection
+      </button>
+    </div>
+  )
+}
+
+function GroupPanel({ group }: { group: import('../types').FrameGroup }) {
+  const design = useStore((s) => s.design)
+  const renameGroup = useStore((s) => s.renameGroup)
+  const ungroup = useStore((s) => s.ungroup)
+  const startDiyProject = useStore((s) => s.startDiyProject)
+  const select = useStore((s) => s.select)
+  const unit = useStore((s) => s.unit)
+  const frames = group.frameIds.map((id) => design.frames.find((f) => f.id === id)).filter(Boolean)
+  const appls = design.appliances.filter((a) => group.frameIds.includes(a.frameId))
+  const totalW = frames.reduce((s, f) => s + (f?.width ?? 0), 0)
+  const project = design.diy?.find((p) => p.groupId === group.id)
+
+  return (
+    <div className="panel">
+      <h2>
+        ⛶ Section <span className="h-hint">{frames.length} frames · {formatLen(totalW, unit)}</span>
+      </h2>
+      <input className="text-input" value={group.name} onChange={(e) => renameGroup(group.id, e.target.value)} />
+      <dl className="facts">
+        <div>
+          <dt>Frames</dt>
+          <dd>{frames.length}</dd>
+        </div>
+        <div>
+          <dt>Appliances</dt>
+          <dd>{appls.length ? appls.map((a) => getAppliance(a.typeId).shortName).join(', ') : 'none'}</dd>
+        </div>
+      </dl>
+      <button
+        className="btn btn-primary"
+        onClick={() => {
+          const id = startDiyProject(group.id)
+          if (id) window.dispatchEvent(new CustomEvent('bbq:diy', { detail: { projectId: id } }))
+        }}
+      >
+        🛠 {project ? 'Open DIY project' : 'DIY — build this myself'}
+      </button>
+      <p className="hint">Get a full DIY breakdown: materials to buy, tools, utilities, structure for your exact appliances — and track the build.</p>
+      <button className="btn btn-ghost" onClick={() => select({ kind: 'frame', id: group.frameIds[0] })}>
+        Select first frame
+      </button>
+      <button className="btn btn-danger-ghost" onClick={() => ungroup(group.id)}>
+        Ungroup
+      </button>
+    </div>
+  )
 }
 
 function SummaryPanel() {
@@ -156,6 +240,16 @@ function FramePanel({ frame }: { frame: Frame }) {
           {formatLen(frame.width, unit)} {frame.lowered ? 'smoker table' : 'module'} · {RUN_NAMES[frame.run ?? 'back']}
         </span>
       </h2>
+      {(() => {
+        const g = design.groups?.find((x) => x.frameIds.includes(frame.id))
+        return g ? (
+          <button className="group-chip" onClick={() => useStore.getState().select({ kind: 'group', id: g.id })}>
+            ⛶ {g.name}
+          </button>
+        ) : (
+          <p className="hint">Tip: shift-click frames to select a section and group it (for DIY builds).</p>
+        )
+      })()}
       <div className="finish-row">
         {FINISHES.map((f) => (
           <button

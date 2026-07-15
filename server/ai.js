@@ -386,6 +386,169 @@ async function validateBuild(design, catalogSummary) {
   return parseJson(text)
 }
 
+// ---------- DIY project planner ----------
+
+/**
+ * Clarifying questions for a DIY build of one kitchen section. Fast schema-only
+ * call — the answers feed diyPlan.
+ */
+async function diyQuestions(section) {
+  const { text } = await callGemini({
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          {
+            text:
+              `A homeowner wants to DIY-build this SECTION of a steel-stud outdoor kitchen (frames = modular steel-stud ` +
+              `cabinets skinned with cement board; appliances drop into cutouts). Ask the 3-5 most important clarifying ` +
+              `questions you need to produce an exact build plan — think utilities available (gas/water/electric and where ` +
+              `from), countertop material preference, exterior finish, foundation/surface, local climate, and skill/tools ` +
+              `they already own. Never ask about things already specified.\n\nSECTION:\n${JSON.stringify(section, null, 1)}`,
+          },
+        ],
+      },
+    ],
+    responseSchema: {
+      type: 'object',
+      properties: {
+        questions: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              q: { type: 'string' },
+              hint: { type: 'string', description: 'example answer / what to consider' },
+            },
+            required: ['id', 'q'],
+          },
+        },
+      },
+      required: ['questions'],
+    },
+    temperature: 0.3,
+    maxOutputTokens: 1024,
+    thinkingBudget: 0,
+  })
+  return parseJson(text)
+}
+
+/** Full DIY plan: grounded research pass (real appliance specs/weights) → strict schema. */
+async function diyPlan(section, answers) {
+  const research = await callGemini({
+    systemInstruction:
+      'You are a master outdoor-kitchen builder writing an exact DIY plan for ONE section of a modular steel-stud ' +
+      'outdoor kitchen (galvanized steel studs + tracks, cement board sheathing, waterproofing, finish, stone counter, ' +
+      'drop-in appliances). Use web search to find the REAL specs of the named appliances — exact cutout dimensions, ' +
+      'WEIGHT (critical for structure: e.g. a Primo XL or ceramic kamado is very heavy and needs a reinforced lowered ' +
+      'table), ventilation requirements for gas units, and utility needs (gas line size, GFCI circuits, water supply/drain). ' +
+      'Be concrete: quantities, sizes, real product types, realistic US prices.',
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          {
+            text:
+              `Write the full DIY build plan for this section. Include: a materials shopping list with quantities and ` +
+              `estimated costs; the complete tool list (marking optional ones); structural notes driven by the actual ` +
+              `appliance weights and cutouts; utility rough-ins (gas/water/drain/electric) needed by these exact ` +
+              `appliances; countertop recommendation (material, thickness, overhang, cutouts) honoring the user's ` +
+              `preference; ordered build steps with durations; and safety notes (venting, clearances to combustibles).\n\n` +
+              `SECTION (cm units):\n${JSON.stringify(section, null, 1)}\n\n` +
+              `HOMEOWNER ANSWERS:\n${JSON.stringify(answers ?? {}, null, 1)}`,
+          },
+        ],
+      },
+    ],
+    tools: [{ google_search: {} }],
+    temperature: 0.3,
+    maxOutputTokens: 4096,
+  })
+
+  const { text } = await callGemini({
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          {
+            text:
+              `Convert this DIY outdoor-kitchen build plan into JSON. Keep quantities/costs concrete. ` +
+              `steps get ids s1,s2,…; keep at most 14 steps, 25 materials, 15 tools.\n\n${research.text}`,
+          },
+        ],
+      },
+    ],
+    responseSchema: {
+      type: 'object',
+      properties: {
+        summary: { type: 'string', description: '2-3 sentence overview of the project' },
+        skill_level: { type: 'string', description: 'e.g. Beginner-friendly / Intermediate / Advanced' },
+        est_days: { type: 'number' },
+        total_est_cost_usd: { type: 'number' },
+        structure_notes: { type: 'array', items: { type: 'string' } },
+        utilities: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { type: { type: 'string' }, requirement: { type: 'string' } },
+            required: ['type', 'requirement'],
+          },
+        },
+        counter: {
+          type: 'object',
+          properties: {
+            recommendation: { type: 'string' },
+            thickness: { type: 'string' },
+            notes: { type: 'string' },
+          },
+          required: ['recommendation', 'thickness', 'notes'],
+        },
+        materials: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              item: { type: 'string' },
+              qty: { type: 'string' },
+              est_cost_usd: { type: 'number' },
+              notes: { type: 'string' },
+            },
+            required: ['item', 'qty', 'est_cost_usd'],
+          },
+        },
+        tools: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { tool: { type: 'string' }, optional: { type: 'boolean' } },
+            required: ['tool'],
+          },
+        },
+        steps: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              title: { type: 'string' },
+              detail: { type: 'string' },
+              duration: { type: 'string' },
+            },
+            required: ['id', 'title', 'detail'],
+          },
+        },
+        safety: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['summary', 'skill_level', 'est_days', 'total_est_cost_usd', 'structure_notes', 'utilities', 'counter', 'materials', 'tools', 'steps', 'safety'],
+    },
+    temperature: 0.1,
+    maxOutputTokens: 8192,
+    thinkingBudget: 0,
+  })
+  return parseJson(text)
+}
+
 // ---------- chat assistant ----------
 
 const CHAT_SCHEMA = {
@@ -508,4 +671,4 @@ async function chat(messages, design, catalogSummary) {
   return result
 }
 
-module.exports = { searchAppliances, validateBuild, chat, scanUrl }
+module.exports = { searchAppliances, validateBuild, chat, scanUrl, diyQuestions, diyPlan }
