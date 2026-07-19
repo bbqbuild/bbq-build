@@ -1393,6 +1393,54 @@ input[type='range'] {
   gap: 12px;
 }
 
+.preset-choice {
+  max-width: 420px;
+}
+
+.choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.choice-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  text-align: left;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: border-color 0.12s, transform 0.12s;
+}
+
+.choice-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.choice-icon {
+  font-size: 20px;
+  line-height: 1.2;
+  color: var(--accent);
+}
+
+.choice-card strong {
+  display: block;
+  font-size: 13.5px;
+}
+
+.choice-card small {
+  display: block;
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
 .preset-card {
   background: var(--panel-2);
   border: 1px solid var(--border);

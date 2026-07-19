@@ -15,6 +15,7 @@ const ACCENT = 0xf59e0b
 interface DragState {
   frameId: string
   runId: RunId
+  struct?: string
   u: number
 }
 
@@ -205,8 +206,8 @@ export function Stage3D() {
         return
       }
 
-      if (hit && hit.object.userData.kind === 'counter' && hit.object.userData.run === 'island' && kitchen) {
-        const island = kitchen.scene2d.runs.find((r) => r.id === 'island')
+      if (hit && hit.object.userData.kind === 'counter' && hit.object.userData.run === 'island' && !hit.object.userData.struct && kitchen) {
+        const island = kitchen.scene2d.runs.find((r) => r.id === 'island' && !r.struct)
         if (island) {
           islandDrag = {
             plane: new THREE.Plane(new THREE.Vector3(0, 1, 0), -hit.point.y),
@@ -235,7 +236,7 @@ export function Stage3D() {
       }
       if (downPos && downHit && downHit.userData.kind === 'frame' && !drag) {
         if (Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y) > 6) {
-          drag = { frameId: downHit.userData.id, runId: downHit.userData.run, u: 0 }
+          drag = { frameId: downHit.userData.id, runId: downHit.userData.run, struct: downHit.userData.struct, u: 0 }
           controls.enabled = false
         }
       }
@@ -243,19 +244,20 @@ export function Stage3D() {
         const hit = pick(e.clientX, e.clientY)
         if (hit) {
           // nearest run by picked point
-          let best: { run: RunId; u: number; d: number } | null = null
-          for (const [id, basis] of kitchen.bases) {
+          let best: { key: string; u: number; d: number } | null = null
+          for (const [key, basis] of kitchen.bases) {
             const u = Math.max(0, Math.min(basis.len, basis.uOf(hit.point)))
             const p = basis.pos(u, 50)
             const d = p.distanceTo(hit.point)
-            if (!best || d < best.d) best = { run: id, u, d }
+            if (!best || d < best.d) best = { key, u, d }
           }
           if (best && best.d < 160) {
-            drag.runId = best.run
+            const basis = kitchen.bases.get(best.key)!
+            drag.runId = basis.id
+            drag.struct = basis.struct
             drag.u = best.u
-            const basis = kitchen.bases.get(best.run)!
             // snap marker to insertion boundary
-            const runScene = kitchen.scene2d.runs.find((r) => r.id === best.run)!
+            const runScene = kitchen.scene2d.runs.find((r) => r.id === basis.id && r.struct === basis.struct)!
             let bx = 0
             for (const fl of runScene.elev.frames) {
               if (best.u > fl.body.x + fl.body.w / 2) bx = fl.body.x + fl.body.w
@@ -285,7 +287,7 @@ export function Stage3D() {
         const off = kitchen.islandGroup.position
         if (Math.abs(off.x) > 0.1 || Math.abs(off.z) > 0.1) {
           const g = kitchen.scene2d.ground
-          const island = kitchen.scene2d.runs.find((r) => r.id === 'island')
+          const island = kitchen.scene2d.runs.find((r) => r.id === 'island' && !r.struct)
           const halfW = (island?.plan.w ?? 60) / 2
           const nx = Math.min(g.x + g.w - halfW, Math.max(g.x + halfW, islandDrag.orig.x + off.x))
           const nz = Math.min(g.z + g.d - 70, Math.max(RUN_DEPTH + 10, islandDrag.orig.z + off.z))
@@ -298,18 +300,18 @@ export function Stage3D() {
         return
       }
       if (drag && kitchen) {
-        const runScene = kitchen.scene2d.runs.find((r) => r.id === drag!.runId)
+        const runScene = kitchen.scene2d.runs.find((r) => r.id === drag!.runId && r.struct === drag!.struct)
         if (runScene) {
           let idx = 0
           for (const fl of runScene.elev.frames) {
             if (drag.u > fl.body.x + fl.body.w / 2) idx = fl.index + 1
           }
           const frame = s.design.frames.find((f) => f.id === drag!.frameId)
-          if (frame && (frame.run ?? 'back') === drag.runId) {
+          if (frame && (frame.run ?? 'back') === drag.runId && frame.struct === drag.struct) {
             const cur = runScene.frames.findIndex((f) => f.id === frame.id)
             if (idx > cur) idx -= 1
           }
-          s.moveFrame(drag.frameId, idx, drag.runId)
+          s.moveFrame(drag.frameId, idx, drag.runId, drag.struct)
           s.select({ kind: 'frame', id: drag.frameId })
         }
         drag = null
@@ -330,6 +332,7 @@ export function Stage3D() {
           if (placed) s.toggleMultiSelect(placed.frameId)
         } else if (!ud) s.select({ kind: 'none' })
         else if (ud.kind === 'corner') s.select({ kind: 'corner', id: ud.id })
+        else if (ud.kind === 'struct') s.select({ kind: 'struct', id: ud.id })
         else if (ud.kind === 'ground') s.select({ kind: 'ground' })
         else if (ud.kind === 'frame') s.select({ kind: 'frame', id: ud.id })
         else if (ud.kind === 'appliance') s.select({ kind: 'appliance', id: ud.id })
@@ -396,15 +399,15 @@ export function Stage3D() {
           dropBox.userData = {}
         }
       } else if (s.dragging.kind === 'frame') {
-        let best: { run: RunId; u: number; d: number } | null = null
-        for (const [id, basis] of kitchen.bases) {
+        let best: { key: string; u: number; d: number } | null = null
+        for (const [key, basis] of kitchen.bases) {
           const u = Math.max(0, Math.min(basis.len, basis.uOf(hit.point)))
           const d = basis.pos(u, 50).distanceTo(hit.point)
-          if (!best || d < best.d) best = { run: id, u, d }
+          if (!best || d < best.d) best = { key, u, d }
         }
         if (best && best.d < 220) {
-          const basis = kitchen.bases.get(best.run)!
-          const runScene = kitchen.scene2d.runs.find((r) => r.id === best.run)!
+          const basis = kitchen.bases.get(best.key)!
+          const runScene = kitchen.scene2d.runs.find((r) => r.id === basis.id && r.struct === basis.struct)!
           let bx = 0
           for (const fl of runScene.elev.frames) {
             if (best.u > fl.body.x + fl.body.w / 2) bx = fl.body.x + fl.body.w
@@ -412,7 +415,7 @@ export function Stage3D() {
           marker.position.copy(basis.pos(bx, 50))
           marker.rotation.y = basis.rotY
           marker.visible = true
-          marker.userData = { run: best.run, u: best.u }
+          marker.userData = { run: basis.id, struct: basis.struct, u: best.u }
         }
       }
     }
@@ -426,17 +429,20 @@ export function Stage3D() {
         // dropped on blank space → auto-create a compatible frame there
         const hit = pick(e.clientX, e.clientY)
         let run: RunId = 'back'
+        let struct: string | undefined
         let idx: number | undefined
         if (hit) {
-          let best: { run: RunId; u: number; d: number } | null = null
-          for (const [id, basis] of kitchen.bases) {
+          let best: { key: string; u: number; d: number } | null = null
+          for (const [key, basis] of kitchen.bases) {
             const u = Math.max(0, Math.min(basis.len, basis.uOf(hit.point)))
             const d = basis.pos(u, 50).distanceTo(hit.point)
-            if (!best || d < best.d) best = { run: id, u, d }
+            if (!best || d < best.d) best = { key, u, d }
           }
           if (best && best.d < 260) {
-            run = best.run
-            const runScene = kitchen.scene2d.runs.find((r) => r.id === best.run)
+            const basis = kitchen.bases.get(best.key)!
+            run = basis.id
+            struct = basis.struct
+            const runScene = kitchen.scene2d.runs.find((r) => r.id === basis.id && r.struct === basis.struct)
             if (runScene) {
               idx = 0
               for (const fl of runScene.elev.frames) {
@@ -445,15 +451,15 @@ export function Stage3D() {
             }
           }
         }
-        s.addFrameForAppliance(s.dragging.typeId, run, idx)
+        s.addFrameForAppliance(s.dragging.typeId, run, idx, struct)
       } else if (s.dragging?.kind === 'frame' && marker.visible && kitchen) {
-        const { run, u } = marker.userData as { run: RunId; u: number }
-        const runScene = kitchen.scene2d.runs.find((r) => r.id === run)!
+        const { run, struct, u } = marker.userData as { run: RunId; struct?: string; u: number }
+        const runScene = kitchen.scene2d.runs.find((r) => r.id === run && r.struct === struct)!
         let idx = 0
         for (const fl of runScene.elev.frames) {
           if (u > fl.body.x + fl.body.w / 2) idx = fl.index + 1
         }
-        s.addFrame(s.dragging.width, idx, s.dragging.lowered, run)
+        s.addFrame(s.dragging.width, idx, s.dragging.lowered, run, struct)
       }
       dropBox.visible = false
       marker.visible = false

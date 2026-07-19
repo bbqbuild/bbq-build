@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { CornerId, Design, DiyProject, FrameFinish, FrameWidth, GroundType, LayoutShape, PlacedAppliance, RunId, Selection, Zone } from '../types'
-import { FRAME_WIDTHS, cornerFor, runsForLayout } from '../types'
+import { FRAME_WIDTHS, cornerFor, runsForLayout, structCornerFor } from '../types'
 import { getAppliance, fitsFrame, registerCustomAppliances } from '../catalog/appliances'
 import { checkPlacement } from '../catalog/compat'
 import type { ApplianceType } from '../types'
@@ -31,12 +31,19 @@ const clone = (d: Design): Design => JSON.parse(JSON.stringify(d))
  * the designated space — adding cabinets refits the space instead of letting
  * frames hang off the slab.
  */
-function ensureGroundFits(d: Design) {
+/** Ground size that snugly holds everything built (ground is centered at x=0). */
+function groundNeeded(d: Design): { w: number; dpt: number } {
   const sc = computeScene(d)
-  const needW = Math.ceil(sc.extents.x1 - sc.extents.x0) + 20
-  const needD = Math.ceil(sc.extents.z1) + 45
-  if (needW > d.ground.width) d.ground.width = Math.min(1200, needW)
-  if (needD > (d.ground.depth ?? 0)) d.ground.depth = Math.min(1200, needD)
+  return {
+    w: Math.ceil(Math.max(-sc.extents.x0, sc.extents.x1) * 2) + 20,
+    dpt: Math.ceil(sc.extents.z1) + 45,
+  }
+}
+
+function ensureGroundFits(d: Design) {
+  const { w, dpt } = groundNeeded(d)
+  if (w > d.ground.width) d.ground.width = Math.min(1200, w)
+  if (dpt > (d.ground.depth ?? 0)) d.ground.depth = Math.min(1200, dpt)
 }
 
 export type DragPayload =
@@ -49,6 +56,7 @@ export interface PendingDrop {
   frameId: string
   /** fallback run + index for "add a new frame instead" */
   run: RunId
+  struct?: string
   index?: number
   zone: Zone
   /** existing same-zone appliance id, if the slot is occupied */
@@ -115,13 +123,13 @@ interface BuilderState {
   setIslandCornerStyle: (style: 'diagonal' | 'square') => void
   removeIslandCorner: () => void
   setIslandPos: (x: number, z: number) => void
-  addFrame: (width: number, index?: number, lowered?: boolean, run?: RunId) => string
+  addFrame: (width: number, index?: number, lowered?: boolean, run?: RunId, struct?: string) => string
   removeFrame: (id: string) => void
   /** absorb the adjacent (empty) frame on one side into this one; returns false if not possible */
   mergeFrame: (id: string, dir: 'left' | 'right') => boolean
   /** split this frame into two — appliances stay on the left, the right is a new empty frame */
   splitFrame: (id: string) => boolean
-  moveFrame: (id: string, toIndex: number, run?: RunId) => void
+  moveFrame: (id: string, toIndex: number, run?: RunId, struct?: string) => void
   setFrameFinish: (id: string, finish: FrameFinish) => void
   setFrameLowered: (id: string, lowered: boolean) => boolean
   setFrameWidth: (id: string, width: number) => void
@@ -144,12 +152,19 @@ interface BuilderState {
   setAllFinishes: (finish: FrameFinish) => void
   placeAppliance: (frameId: string, typeId: string) => boolean
   /** Drop an appliance on blank space: auto-create a compatible frame and place it. */
-  addFrameForAppliance: (typeId: string, run?: RunId, index?: number) => boolean
+  addFrameForAppliance: (typeId: string, run?: RunId, index?: number, struct?: string) => boolean
   /** Drop onto a specific frame: place if it fits & the slot is free, else prompt. */
-  tryDropAppliance: (frameId: string, typeId: string, run: RunId, index?: number) => void
+  tryDropAppliance: (frameId: string, typeId: string, run: RunId, index?: number, struct?: string) => void
   pendingDrop: PendingDrop | null
   resolvePendingDrop: (choice: 'replace' | 'newframe' | 'cancel') => void
   removeAppliance: (id: string) => void
+  /** Add an independent structure (e.g. a preset) beside the current kitchen. */
+  addStructure: (preset: Design, name: string) => string
+  removeStructure: (id: string) => void
+  renameStructure: (id: string, name: string) => void
+  moveStructure: (id: string, origin: { x?: number; z?: number }) => void
+  /** Shrink (or grow) the ground platform to snugly hold everything built. */
+  fitGroundToKitchen: () => void
   clearAll: () => void
   markSaved: (savedId: number) => void
   undo: () => void
@@ -399,13 +414,22 @@ export const useStore = create<BuilderState>((set, get) => {
         d.islandPos = { x: Math.round(x / 5) * 5, z: Math.round(z / 5) * 5 }
       }, 'island-pos'),
 
-    addFrame: (width, index, lowered, run = 'back') => {
+    addFrame: (width, index, lowered, run = 'back', struct) => {
       const id = newId('f')
       commit((d) => {
         const finish = d.frames[0]?.finish ?? 'graphite'
-        const frame = { id, width, finish, ...(lowered ? { lowered: true } : {}), ...(run !== 'back' ? { run } : {}) }
-        // index is within the run; map to a flat-array position
-        const runIdxs = d.frames.map((f, i) => ((f.run ?? 'back') === run ? i : -1)).filter((i) => i >= 0)
+        const frame = {
+          id,
+          width,
+          finish,
+          ...(lowered ? { lowered: true } : {}),
+          ...(run !== 'back' ? { run } : {}),
+          ...(struct ? { struct } : {}),
+        }
+        // index is within the run (of this structure); map to a flat-array position
+        const runIdxs = d.frames
+          .map((f, i) => ((f.run ?? 'back') === run && f.struct === struct ? i : -1))
+          .filter((i) => i >= 0)
         if (index === undefined || index >= runIdxs.length) {
           const after = runIdxs.length ? runIdxs[runIdxs.length - 1] + 1 : d.frames.length
           d.frames.splice(after, 0, frame)
@@ -560,7 +584,7 @@ export const useStore = create<BuilderState>((set, get) => {
       const frame = design.frames.find((f) => f.id === id)
       if (!frame) return false
       const run = frame.run ?? 'back'
-      const runFrames = design.frames.filter((f) => (f.run ?? 'back') === run)
+      const runFrames = design.frames.filter((f) => (f.run ?? 'back') === run && f.struct === frame.struct)
       const idx = runFrames.findIndex((f) => f.id === id)
       const neighbor = dir === 'left' ? runFrames[idx - 1] : runFrames[idx + 1]
       // only merge an existing, EMPTY neighbour (no appliance in either zone)
@@ -594,6 +618,7 @@ export const useStore = create<BuilderState>((set, get) => {
           finish: f.finish,
           ...(f.lowered ? { lowered: true } : {}),
           ...(f.run && f.run !== 'back' ? { run: f.run } : {}),
+          ...(f.struct ? { struct: f.struct } : {}),
         }
         const idx = d.frames.findIndex((x) => x.id === id)
         d.frames.splice(idx + 1, 0, nf)
@@ -602,15 +627,20 @@ export const useStore = create<BuilderState>((set, get) => {
       return true
     },
 
-    moveFrame: (id, toIndex, run) =>
+    moveFrame: (id, toIndex, run, struct) =>
       commit((d) => {
         const from = d.frames.findIndex((f) => f.id === id)
         if (from < 0) return
         const [f] = d.frames.splice(from, 1)
         const targetRun = run ?? f.run ?? 'back'
+        const targetStruct = run !== undefined ? struct : f.struct // explicit run target carries its structure
         if (targetRun === 'back') delete f.run
         else f.run = targetRun
-        const runIdxs = d.frames.map((fr, i) => ((fr.run ?? 'back') === targetRun ? i : -1)).filter((i) => i >= 0)
+        if (targetStruct === undefined) delete f.struct
+        else f.struct = targetStruct
+        const runIdxs = d.frames
+          .map((fr, i) => ((fr.run ?? 'back') === targetRun && fr.struct === targetStruct ? i : -1))
+          .filter((i) => i >= 0)
         const clamped = Math.max(0, Math.min(toIndex, runIdxs.length))
         if (clamped >= runIdxs.length) {
           const after = runIdxs.length ? runIdxs[runIdxs.length - 1] + 1 : d.frames.length
@@ -647,7 +677,7 @@ export const useStore = create<BuilderState>((set, get) => {
       return true
     },
 
-    addFrameForAppliance: (typeId, run = 'back', index) => {
+    addFrameForAppliance: (typeId, run = 'back', index, struct) => {
       let type
       try {
         type = getAppliance(typeId)
@@ -659,7 +689,7 @@ export const useStore = create<BuilderState>((set, get) => {
       const width = (std ?? Math.ceil(type.minFrameWidth / 5) * 5) as FrameWidth
       const lowered = type.mount === 'kamado'
       const { addFrame, placeAppliance } = get()
-      const frameId = addFrame(width, index, lowered, run)
+      const frameId = addFrame(width, index, lowered, run, struct)
       const ok = placeAppliance(frameId, typeId)
       if (!ok) {
         // shouldn't happen (frame was sized for it), but don't leave an orphan frame
@@ -669,7 +699,7 @@ export const useStore = create<BuilderState>((set, get) => {
       return true
     },
 
-    tryDropAppliance: (frameId, typeId, run, index) => {
+    tryDropAppliance: (frameId, typeId, run, index, struct) => {
       const { design } = get()
       const frame = design.frames.find((f) => f.id === frameId)
       let type
@@ -679,7 +709,7 @@ export const useStore = create<BuilderState>((set, get) => {
         return
       }
       if (!frame) {
-        get().addFrameForAppliance(typeId, run, index)
+        get().addFrameForAppliance(typeId, run, index, struct)
         return
       }
       const check = checkPlacement(design, frame, type)
@@ -695,6 +725,7 @@ export const useStore = create<BuilderState>((set, get) => {
           typeId,
           frameId,
           run,
+          struct,
           index,
           zone: type.zone,
           occupantId: occupant?.id,
@@ -716,7 +747,7 @@ export const useStore = create<BuilderState>((set, get) => {
       if (choice === 'replace' && pendingDrop.fits) {
         get().placeAppliance(pendingDrop.frameId, pendingDrop.typeId) // replaces same-zone occupant
       } else if (choice === 'newframe') {
-        get().addFrameForAppliance(pendingDrop.typeId, pendingDrop.run, pendingDrop.index)
+        get().addFrameForAppliance(pendingDrop.typeId, pendingDrop.run, pendingDrop.index, pendingDrop.struct)
       }
     },
 
@@ -727,10 +758,91 @@ export const useStore = create<BuilderState>((set, get) => {
       set({ selection: { kind: 'none' } })
     },
 
+    addStructure: (preset, name) => {
+      const id = newId('st')
+      const AISLE = 110 // walkway between the existing kitchen and the new structure
+      commit((d) => {
+        // where does the new structure start? in front of everything built so far
+        const z0 = d.frames.length ? computeScene(d).extents.z1 + AISLE : 0
+        // clone the preset with fresh ids so the same preset can be added twice
+        const idMap = new Map<string, string>()
+        for (const f of preset.frames) idMap.set(f.id, newId('f'))
+        d.frames.push(
+          ...preset.frames.map((f) => ({
+            ...f,
+            id: idMap.get(f.id)!,
+            // islandCorner isn't supported inside structures — fold its wing back
+            run: f.run === 'island-wing' ? ('island' as const) : f.run,
+            struct: id,
+          })),
+        )
+        d.appliances.push(
+          ...preset.appliances
+            .filter((a) => idMap.has(a.frameId))
+            .map((a) => ({ ...a, id: newId('a'), frameId: idMap.get(a.frameId)! })),
+        )
+        // preset-specific real products come along for the ride
+        for (const c of preset.custom ?? []) {
+          if (!(d.custom ?? []).some((x) => x.id === c.id)) d.custom = [...(d.custom ?? []), c]
+        }
+        d.structures = [
+          ...(d.structures ?? []),
+          {
+            id,
+            name,
+            origin: { x: 0, z: z0 },
+            layout: preset.layout,
+            island: preset.island,
+            islandBar: preset.islandBar,
+            islandPos: preset.islandPos,
+            corners: preset.corners,
+          },
+        ]
+        ensureGroundFits(d)
+      })
+      set({ selection: { kind: 'struct', id } })
+      return id
+    },
+
+    removeStructure: (id) => {
+      commit((d) => {
+        const ids = new Set(d.frames.filter((f) => f.struct === id).map((f) => f.id))
+        d.frames = d.frames.filter((f) => f.struct !== id)
+        d.appliances = d.appliances.filter((a) => !ids.has(a.frameId))
+        d.groups = (d.groups ?? []).map((g) => ({ ...g, frameIds: g.frameIds.filter((f) => !ids.has(f)) })).filter((g) => g.frameIds.length)
+        d.diy = (d.diy ?? []).filter((p) => d.groups?.some((g) => g.id === p.groupId))
+        d.structures = (d.structures ?? []).filter((s) => s.id !== id)
+      })
+      set({ selection: { kind: 'none' } })
+    },
+
+    renameStructure: (id, name) =>
+      commit((d) => {
+        const st = d.structures?.find((s) => s.id === id)
+        if (st) st.name = name.trim() || st.name
+      }, `st-name:${id}`),
+
+    moveStructure: (id, origin) =>
+      commit((d) => {
+        const st = d.structures?.find((s) => s.id === id)
+        if (!st) return
+        if (origin.x !== undefined) st.origin.x = Math.round(origin.x / 5) * 5
+        if (origin.z !== undefined) st.origin.z = Math.max(0, Math.round(origin.z / 5) * 5)
+        ensureGroundFits(d)
+      }, `st-pos:${id}`),
+
+    fitGroundToKitchen: () =>
+      commit((d) => {
+        const { w, dpt } = groundNeeded(d)
+        d.ground.width = Math.max(100, Math.min(1200, w))
+        d.ground.depth = Math.max(120, Math.min(1200, dpt))
+      }),
+
     clearAll: () => {
       commit((d) => {
         d.frames = []
         d.appliances = []
+        d.structures = []
       })
       set({ selection: { kind: 'none' } })
     },
@@ -834,7 +946,13 @@ export function priceBreakdown(design: Design, unit: Unit = 'cm'): { lines: Pric
     const total = Math.round(cmat.pricePerM * runM)
     lines.push({ label: `${cmat.name} counter`, detail: `${formatLen(design.frames.reduce((s,f)=>s+f.width,0), unit)} run`, qty: 1, unit: total, total })
   }
-  const corners = (['left', 'right'] as const).filter((s) => cornerFor(design, s)).length
+  // corner cabinets: the main kitchen's plus each structure's
+  const structCorners = (design.structures ?? []).flatMap((st) =>
+    (['left', 'right'] as const)
+      .map((s) => structCornerFor(st, design.frames.filter((f) => f.struct === st.id), s))
+      .filter((c): c is NonNullable<typeof c> => Boolean(c)),
+  )
+  const corners = (['left', 'right'] as const).filter((s) => cornerFor(design, s)).length + structCorners.length
   if (corners) {
     lines.push({
       label: 'Corner unit',
@@ -850,6 +968,10 @@ export function priceBreakdown(design: Design, unit: Unit = 'cm'): { lines: Pric
     const c = cornerFor(design, side)
     if (c?.top) applCounts.set(c.top, (applCounts.get(c.top) ?? 0) + 1)
     if (c?.base) applCounts.set(c.base, (applCounts.get(c.base) ?? 0) + 1)
+  }
+  for (const c of structCorners) {
+    if (c.top) applCounts.set(c.top, (applCounts.get(c.top) ?? 0) + 1)
+    if (c.base) applCounts.set(c.base, (applCounts.get(c.base) ?? 0) + 1)
   }
   for (const [typeId, qty] of applCounts) {
     const t = getAppliance(typeId)

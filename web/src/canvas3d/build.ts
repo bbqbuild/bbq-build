@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import { getAppliance } from '../catalog/appliances'
 import { computeScene, type SceneLayout3 } from '../canvas/scene'
 import type { Design, RunId } from '../types'
-import { COUNTER_OVERHANG, COUNTER_T, GROUND_T, RUN_DEPTH, cornerFor, frameBodyH } from '../types'
+import { COUNTER_OVERHANG, COUNTER_T, GROUND_T, RUN_DEPTH, cornerFor, frameBodyH, structCornerFor } from '../types'
 import { FINISH_COLORS, frameFrontTexture, groundTopTexture, labelSprite } from './textures'
 import { counterMaterial } from '../catalog/frames'
 import { baseAppliance3d, topAppliance3d, type AnimPart } from './appliances3d'
@@ -13,6 +13,8 @@ import { formatLenBare, type Unit } from '../units'
 
 export interface RunBasis {
   id: RunId
+  /** structure this run belongs to (absent = main) */
+  struct?: string
   rotY: number
   /** world position for a point at run-u (cm along run), height y, centered in depth */
   pos: (u: number, y: number) => THREE.Vector3
@@ -24,7 +26,8 @@ export interface RunBasis {
 export interface Kitchen3D {
   group: THREE.Group
   pickables: THREE.Object3D[]
-  bases: Map<RunId, RunBasis>
+  /** keyed `${struct ?? ''}:${runId}` so structure runs don't collide with main */
+  bases: Map<string, RunBasis>
   scene2d: SceneLayout3
   /** animatable appliance parts (doors, drawers, hoods, lids) */
   anim: AnimPart[]
@@ -56,7 +59,7 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
   const islandGroup = new THREE.Group()
   group.add(islandGroup)
   const pickables: THREE.Object3D[] = []
-  const bases = new Map<RunId, RunBasis>()
+  const bases = new Map<string, RunBasis>()
   const anim: AnimPart[] = []
 
   // ---- ground ----
@@ -84,10 +87,11 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
     let basis: RunBasis
     if (run.id === 'back') {
       const ox = run.face.origin.x
+      const zc = run.plan.z + RUN_DEPTH / 2 // struct back runs sit at their origin z
       basis = {
         id: 'back',
         rotY: 0,
-        pos: (u, y) => new THREE.Vector3(ox + u, y, RUN_DEPTH / 2),
+        pos: (u, y) => new THREE.Vector3(ox + u, y, zc),
         uOf: (p) => p.x - ox,
         len: run.elev.len,
       }
@@ -95,7 +99,7 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
       const ox = run.face.origin.x
       const z0 = run.plan.z
       // bar islands face the cook (−z, toward the main run); guests sit on the +z side
-      const bar = Boolean(design.islandBar)
+      const bar = Boolean(run.reversed)
       basis = {
         id: 'island',
         rotY: bar ? Math.PI : 0,
@@ -135,8 +139,10 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
         len: run.elev.len,
       }
     }
-    bases.set(run.id, basis)
-    const onIsland = run.id === 'island' || run.id === 'island-wing'
+    basis.struct = run.struct
+    bases.set(`${run.struct ?? ''}:${run.id}`, basis)
+    // only the MAIN island rides the drag group; structure islands stay put
+    const onIsland = (run.id === 'island' || run.id === 'island-wing') && !run.struct
 
     // ---- frames (per-frame group so appliance parts can animate in local space) ----
     for (const fl of run.elev.frames) {
@@ -159,7 +165,7 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
       body.position.set(0, bodyH / 2, 0)
       body.castShadow = true
       body.receiveShadow = true
-      body.userData = { kind: 'frame', id: frame.id, run: run.id }
+      body.userData = { kind: 'frame', id: frame.id, run: run.id, struct: run.struct }
       fgroup.add(body)
 
       // base appliance
@@ -212,7 +218,7 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
       cbox.rotation.y = basis.rotY
       cbox.castShadow = true
       cbox.receiveShadow = true
-      cbox.userData = { kind: 'counter', run: run.id }
+      cbox.userData = { kind: 'counter', run: run.id, struct: run.struct }
       ;(onIsland ? islandGroup : group).add(cbox)
       pickables.push(cbox)
     }
@@ -236,13 +242,31 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
   }
 
   // ---- diagonal corner units (pentagon 90×90 with a 45° front) ----
-  const back = scene2d.runs.find((r) => r.id === 'back')
+  // one job per corner: the main kitchen's two sides plus each structure's
+  const cornerJobs: Array<{
+    side: 'left' | 'right'
+    corner: NonNullable<ReturnType<typeof cornerFor>>
+    backPlan: { x: number; z: number; w: number }
+    pick: { kind: string; id: string }
+  }> = []
+  const mainBack = scene2d.runs.find((r) => r.id === 'back' && !r.struct)
   for (const side of ['left', 'right'] as const) {
     const corner = cornerFor(design, side)
-    if (!corner || !back) continue
+    if (corner && mainBack) cornerJobs.push({ side, corner, backPlan: mainBack.plan, pick: { kind: 'corner', id: side } })
+  }
+  for (const st of design.structures ?? []) {
+    const sback = scene2d.runs.find((r) => r.id === 'back' && r.struct === st.id)
+    if (!sback) continue
+    for (const side of ['left', 'right'] as const) {
+      const corner = structCornerFor(st, design.frames.filter((f) => f.struct === st.id), side)
+      if (corner) cornerJobs.push({ side, corner, backPlan: sback.plan, pick: { kind: 'struct', id: st.id } })
+    }
+  }
+  for (const { side, corner, backPlan, pick } of cornerJobs) {
     const bodyH = corner.lowered ? 58 : 82
     const CN = 90
-    const x = side === 'left' ? back.plan.x - CN : back.plan.x + back.plan.w
+    const x = side === 'left' ? backPlan.x - CN : backPlan.x + backPlan.w
+    const cz = backPlan.z
     // pentagon in plan (local dx, dz), diagonal facing the interior
     const pts =
       side === 'left'
@@ -261,7 +285,7 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
       const mesh = new THREE.Mesh(geo, mat)
       // shape plane is (x, z); extrusion along +z of shape → rotate so it extrudes up
       mesh.rotation.x = Math.PI / 2
-      mesh.position.set(x, yBase + h, 0)
+      mesh.position.set(x, yBase + h, cz)
       mesh.scale.z = 1
       mesh.castShadow = true
       mesh.receiveShadow = true
@@ -270,7 +294,7 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
     // a counter-level oven on the corner (Gozney / pizza / taboon)
     const ovenTopY = bodyH + COUNTER_T
     const ovenCx = x + CN / 2
-    const ovenCz = CN / 2
+    const ovenCz = cz + CN / 2
     if (corner.top) {
       const taboon = corner.top.startsWith('taboon')
       const oven = new THREE.Group()
@@ -282,7 +306,7 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
       dome.scale.y = taboon ? 1.25 : 0.95
       dome.position.y = ovenTopY + 1
       dome.castShadow = true
-      dome.userData = { kind: 'corner', id: side }
+      dome.userData = pick
       oven.add(dome)
       // glowing mouth / opening facing the interior (+? toward viewer)
       const mouth = new THREE.Mesh(
@@ -304,27 +328,27 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
     if (corner.style === 'square') {
       // plain box corner (90×90)
       const cbody = new THREE.Mesh(new THREE.BoxGeometry(CN, bodyH, CN), finishMat(corner.finish))
-      cbody.position.set(x + CN / 2, bodyH / 2, CN / 2)
+      cbody.position.set(x + CN / 2, bodyH / 2, cz + CN / 2)
       cbody.castShadow = true
       cbody.receiveShadow = true
-      cbody.userData = { kind: 'corner', id: side }
+      cbody.userData = pick
       group.add(cbody)
       pickables.push(cbody)
       const ctop = new THREE.Mesh(
         new THREE.BoxGeometry(CN + COUNTER_OVERHANG, COUNTER_T, CN + COUNTER_OVERHANG),
         counterMat.clone(),
       )
-      ctop.position.set(x + CN / 2, bodyH + COUNTER_T / 2, CN / 2)
-      ctop.userData = { kind: 'corner', id: side }
+      ctop.position.set(x + CN / 2, bodyH + COUNTER_T / 2, cz + CN / 2)
+      ctop.userData = pick
       group.add(ctop)
       pickables.push(ctop)
     } else {
       const body = mkPent(bodyH, 0, finishMat(corner.finish))
-      body.userData = { kind: 'corner', id: side }
+      body.userData = pick
       group.add(body)
       pickables.push(body)
       const top = mkPent(COUNTER_T, bodyH, counterMat.clone(), COUNTER_OVERHANG)
-      top.userData = { kind: 'corner', id: side }
+      top.userData = pick
       group.add(top)
       pickables.push(top)
     }
@@ -355,9 +379,9 @@ export function buildKitchen(design: Design, unit: Unit, showDims: boolean): Kit
       )
       handle.position.set(0, doorH * 0.32, 1.6)
       doorGroup.add(handle)
-      doorGroup.position.set(x + mlx + nx * 1.5, cy, mlz + nz * 1.5)
+      doorGroup.position.set(x + mlx + nx * 1.5, cy, cz + mlz + nz * 1.5)
       doorGroup.rotation.y = rotY
-      doorGroup.traverse((o) => (o.userData = { kind: 'corner', id: side }))
+      doorGroup.traverse((o) => (o.userData = pick))
       group.add(doorGroup)
       pickables.push(doorGroup)
     }

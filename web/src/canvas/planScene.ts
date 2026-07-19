@@ -3,7 +3,7 @@
 // Everything is drawn in centimeters after the caller applies the camera.
 
 import type { CornerId, Design, Frame, RunId, Selection } from '../types'
-import { CORNER, COUNTER_OVERHANG, RUN_DEPTH, cornerFor, groundDepth } from '../types'
+import { CORNER, COUNTER_OVERHANG, RUN_DEPTH, cornerFor, groundDepth, structCornerFor } from '../types'
 import { getAppliance } from '../catalog/appliances'
 import { counterMaterial } from '../catalog/frames'
 import { Ctx, dimLine, dimLineV, fillRoundRect, label, roundRectPath } from './draw'
@@ -76,19 +76,32 @@ export function baseAppliancePlans(scene: SceneLayout3): Array<PlanRect & { id: 
 }
 
 /** Corner units → plan origin (x offset), oven anchor and their raw rects. */
-export function cornerPlans(scene: SceneLayout3): Array<{ id: CornerId; rects: CounterTop[]; x0: number; ax: number; az: number }> {
-  const byId = new Map<CornerId, CounterTop[]>()
+export function cornerPlans(
+  scene: SceneLayout3,
+): Array<{ id: CornerId; struct?: string; rects: CounterTop[]; x0: number; z0: number; ax: number; az: number }> {
+  const byId = new Map<string, CounterTop[]>()
   for (const t of scene.counterTops) {
     if (!t.corner) continue
-    const arr = byId.get(t.corner) ?? []
+    const key = `${t.struct ?? ''}:${t.corner}`
+    const arr = byId.get(key) ?? []
     arr.push(t)
-    byId.set(t.corner, arr)
+    byId.set(key, arr)
   }
-  return [...byId.entries()].map(([id, rects]) => {
-    // the corner cabinet spans a CORNER×CORNER footprint from x0
+  return [...byId.entries()].map(([key, rects]) => {
+    const [struct, id] = key.split(':') as [string, CornerId]
+    // the corner cabinet spans a CORNER×CORNER footprint from (x0, z0)
     const x0 = Math.min(...rects.map((r) => r.x))
-    return { id, rects, x0, ax: x0 + CORNER / 2, az: CORNER / 2 }
+    const z0 = Math.min(...rects.map((r) => r.z))
+    return { id, struct: struct || undefined, rects, x0, z0, ax: x0 + CORNER / 2, az: z0 + CORNER / 2 }
   })
+}
+
+/** Corner config for a plan corner — main design or a sub-structure's. */
+export function cornerConfig(design: Design, struct: string | undefined, side: CornerId) {
+  if (!struct) return cornerFor(design, side)
+  const st = design.structures?.find((s) => s.id === struct)
+  if (!st) return null
+  return structCornerFor(st, design.frames.filter((f) => f.struct === struct), side)
 }
 
 /**
@@ -246,7 +259,9 @@ function drawCounters(ctx: Ctx, s: RenderState) {
     pts.forEach(([x, z], i) => (i === 0 ? ctx.moveTo(x, z) : ctx.lineTo(x, z)))
     ctx.closePath()
   }
-  const cornerPolys = cornerPlans(s.scene).map((c) => cornerPoly(c.id, c.x0, cornerFor(s.design, c.id)?.style ?? 'diagonal', COUNTER_OVERHANG))
+  const cornerPolys = cornerPlans(s.scene).map((c) =>
+    cornerPoly(c.id, c.x0, cornerConfig(s.design, c.struct, c.id)?.style ?? 'diagonal', COUNTER_OVERHANG, c.z0),
+  )
   const ic = s.scene.islandCorner
   if (ic) cornerPolys.push(cornerPoly('right', ic.x0, ic.style, COUNTER_OVERHANG, ic.z0))
   for (const pts of cornerPolys) {
@@ -348,7 +363,7 @@ function drawTopAppliance(ctx: Ctx, r: PlanRect, typeId: string) {
 
 function drawCornerOvens(ctx: Ctx, design: Design, corners: ReturnType<typeof cornerPlans>) {
   for (const c of corners) {
-    const top = cornerFor(design, c.id)?.top
+    const top = cornerConfig(design, c.struct, c.id)?.top
     if (!top) continue
     const taboon = top.startsWith('taboon')
     const rad = 20
@@ -385,12 +400,19 @@ function drawSelection(ctx: Ctx, s: RenderState) {
     }
   } else if (sel.kind === 'corner') {
     for (const c of cornerPlans(s.scene)) {
-      if (c.id !== sel.id) continue
+      if (c.id !== sel.id || c.struct) continue
       const style = cornerFor(s.design, c.id)?.style ?? 'diagonal'
       const pts = cornerPoly(c.id, c.x0, style, COUNTER_OVERHANG)
       ctx.beginPath()
       pts.forEach(([x, z], i) => (i === 0 ? ctx.moveTo(x, z) : ctx.lineTo(x, z)))
       ctx.closePath()
+      ctx.stroke()
+    }
+  } else if (sel.kind === 'struct') {
+    // outline the whole structure: its frame plans + counter tops
+    const plans = framePlans(s.scene).filter((p) => p.frame.struct === sel.id)
+    for (const f of plans) {
+      roundRectPath(ctx, f.x - 0.5, f.z - 0.5, f.w + 1, f.d + 1, 2)
       ctx.stroke()
     }
   } else if (sel.kind === 'multi' || sel.kind === 'group') {
@@ -499,6 +521,7 @@ export type PlanHit =
   | { kind: 'appliance'; id: string; run: RunId }
   | { kind: 'frame'; id: string; run: RunId }
   | { kind: 'corner'; id: CornerId }
+  | { kind: 'struct'; id: string }
   | { kind: 'ground' }
   | null
 
@@ -510,7 +533,10 @@ export function planHitTest(scene: SceneLayout3, x: number, z: number): PlanHit 
     }
   }
   for (const c of cornerPlans(scene)) {
-    if (c.rects.some((r) => inRect(r, x, z))) return { kind: 'corner', id: c.id }
+    if (c.rects.some((r) => inRect(r, x, z))) {
+      // a sub-structure's corner isn't individually editable — select the structure
+      return c.struct ? { kind: 'struct', id: c.struct } : { kind: 'corner', id: c.id }
+    }
   }
   for (const f of framePlans(scene)) {
     if (inRect(f, x, z)) return { kind: 'frame', id: f.id, run: f.run }
@@ -533,16 +559,20 @@ export function planHitTest(scene: SceneLayout3, x: number, z: number): PlanHit 
  * Uses a generous margin (counter overhang + slack) so aiming at the visible
  * counter — not just the cabinet body — lands on the intended frame.
  */
-export function frameForDrop(scene: SceneLayout3, x: number, z: number): { id: string; run: RunId } | null {
+export function frameForDrop(
+  scene: SceneLayout3,
+  x: number,
+  z: number,
+): { id: string; run: RunId; struct?: string } | null {
   const M = COUNTER_OVERHANG + 4
-  let best: { id: string; run: RunId; d: number } | null = null
+  let best: { id: string; run: RunId; struct?: string; d: number } | null = null
   for (const f of framePlans(scene)) {
     const ex = { x: f.x - M, z: f.z - M, w: f.w + 2 * M, d: f.d + 2 * M }
     if (!inRect(ex, x, z)) continue
     const dd = Math.hypot(x - (f.x + f.w / 2), z - (f.z + f.d / 2))
-    if (!best || dd < best.d) best = { id: f.id, run: f.run, d: dd }
+    if (!best || dd < best.d) best = { id: f.id, run: f.run, struct: f.frame.struct, d: dd }
   }
-  return best ? { id: best.id, run: best.run } : null
+  return best ? { id: best.id, run: best.run, struct: best.struct } : null
 }
 
 /** Nearest run + run-local insertion u for a plan point (frame drags / drops). */

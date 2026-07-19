@@ -22,6 +22,8 @@ export interface FrameDragState {
   frameId: string
   /** run currently under the pointer */
   runId: RunId
+  /** structure of that run (absent = main) */
+  struct?: string
   /** run-local insertion u */
   u: number
 }
@@ -307,7 +309,7 @@ function drawRun(ctx: Ctx, s: RenderState, run: RunScene, pxPerCm: number) {
       dropTargets: s.dropTargets,
       activeDropTarget: s.activeDropTarget,
       dragFrameId: s.frameDrag?.frameId ?? null,
-      insertionU: s.frameDrag && s.frameDrag.runId === run.id ? s.frameDrag.u : null,
+      insertionU: s.frameDrag && s.frameDrag.runId === run.id && s.frameDrag.struct === run.struct ? s.frameDrag.u : null,
       showDims: s.showDims,
       unit: s.unit,
       time: s.time,

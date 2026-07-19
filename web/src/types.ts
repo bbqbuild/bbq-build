@@ -44,6 +44,26 @@ export interface Frame {
   height?: number
   /** Which run this frame sits in (default 'back'). */
   run?: RunId
+  /** Id of the independent structure this frame belongs to (absent = main). */
+  struct?: string
+}
+
+/**
+ * An extra, independent structure on the same ground — e.g. a preset added
+ * next to the existing kitchen. Carries its own shape config; its frames live
+ * in design.frames tagged with frame.struct, so all id-based editing
+ * (appliances, widths, finishes, DIY groups) works unchanged.
+ */
+export interface Structure {
+  id: string
+  name: string
+  /** plan offset of this structure's own origin (its x=0 / z=0) */
+  origin: { x: number; z: number }
+  layout?: LayoutShape
+  island?: boolean
+  islandBar?: boolean
+  islandPos?: { x: number; z: number }
+  corners?: Partial<Record<CornerId, Corner | null>>
 }
 
 /** Which vertical zone of a frame an appliance occupies. */
@@ -92,6 +112,17 @@ export interface Design {
   groups?: FrameGroup[]
   /** DIY build projects, one per group */
   diy?: DiyProject[]
+  /** extra independent structures placed on the same ground */
+  structures?: Structure[]
+}
+
+/** Resolve a sub-structure's corner unit for a side (mirrors cornerFor). */
+export function structCornerFor(st: Structure, frames: Frame[], side: CornerId): Corner | null {
+  const wing = side === 'left' ? 'l-left' : 'l-right'
+  const active = st.layout === wing || st.layout === 'u'
+  if (!active) return null
+  if (st.corners && side in st.corners) return st.corners[side] ?? null
+  return { finish: frames[0]?.finish ?? 'graphite' }
 }
 
 /** Resolve the corner unit for a side, honoring removal and defaults. */
@@ -172,6 +203,7 @@ export type Selection =
   | { kind: 'counter' }
   | { kind: 'multi'; ids: string[] }
   | { kind: 'group'; id: string }
+  | { kind: 'struct'; id: string }
 
 /** A named set of frames — the unit for DIY projects (and future bulk edits). */
 export interface FrameGroup {

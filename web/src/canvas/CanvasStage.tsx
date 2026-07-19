@@ -49,9 +49,9 @@ export function CanvasStage() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const pointer = useRef<PointerState | null>(null)
-  const frameDrag = useRef<{ runId: RunId; u: number } | null>(null)
+  const frameDrag = useRef<{ runId: RunId; struct?: string; u: number } | null>(null)
   const dropTarget = useRef<string | null>(null)
-  const frameDropHint = useRef<{ runId: RunId; u: number } | null>(null)
+  const frameDropHint = useRef<{ runId: RunId; struct?: string; u: number } | null>(null)
   const hover = useRef<{ frame: string | null; appliance: string | null }>({ frame: null, appliance: null })
   const didInitialFit = useRef(false)
 
@@ -91,9 +91,9 @@ export function CanvasStage() {
 
       const dragState =
         pointer.current?.frameDragId && frameDrag.current
-          ? { frameId: pointer.current.frameDragId, runId: frameDrag.current.runId, u: frameDrag.current.u }
+          ? { frameId: pointer.current.frameDragId, runId: frameDrag.current.runId, struct: frameDrag.current.struct, u: frameDrag.current.u }
           : s.dragging?.kind === 'frame' && frameDropHint.current
-            ? { frameId: '__new__', runId: frameDropHint.current.runId, u: frameDropHint.current.u }
+            ? { frameId: '__new__', runId: frameDropHint.current.runId, struct: frameDropHint.current.struct, u: frameDropHint.current.u }
             : null
 
       const rs: RenderState = {
@@ -175,7 +175,7 @@ export function CanvasStage() {
     if (p.frameDragId) {
       const scene = computeScene(useStore.getState().design)
       const target = runUnderPointer(scene, w.x, w.y)
-      if (target) frameDrag.current = { runId: target.run.id, u: target.u }
+      if (target) frameDrag.current = { runId: target.run.id, struct: target.run.struct, u: target.u }
       canvasRef.current!.style.cursor = 'grabbing'
     } else if (p.panStart) {
       camera.x = p.panStart.camX - dx / camera.zoom
@@ -199,19 +199,20 @@ export function CanvasStage() {
       } else if (!p.hit) s.select({ kind: 'none' })
       else if (p.hit.kind === 'ground') s.select({ kind: 'ground' })
       else if (p.hit.kind === 'corner') s.select({ kind: 'corner', id: p.hit.id })
+      else if (p.hit.kind === 'struct') s.select({ kind: 'struct', id: p.hit.id })
       else if (p.hit.kind === 'frame') s.select({ kind: 'frame', id: p.hit.id })
       else s.select({ kind: 'appliance', id: p.hit.id })
     } else if (p.frameDragId && frameDrag.current) {
       const scene = computeScene(s.design)
-      const target = scene.runs.find((r) => r.id === frameDrag.current!.runId)
+      const target = scene.runs.find((r) => r.id === frameDrag.current!.runId && r.struct === frameDrag.current!.struct)
       if (target) {
         const frame = s.design.frames.find((f) => f.id === p.frameDragId)
         let idx = insertionIndexInRun(target, frameDrag.current.u)
-        if (frame && (frame.run ?? 'back') === target.id) {
+        if (frame && (frame.run ?? 'back') === target.id && frame.struct === target.struct) {
           const cur = target.frames.findIndex((f) => f.id === frame.id)
           if (idx > cur) idx -= 1
         }
-        s.moveFrame(p.frameDragId, idx, target.id)
+        s.moveFrame(p.frameDragId, idx, target.id, target.struct)
       }
       s.select({ kind: 'frame', id: p.frameDragId })
     }
@@ -240,7 +241,7 @@ export function CanvasStage() {
       dropTarget.current = target?.id ?? null
     } else if (s.dragging.kind === 'frame') {
       const target = runUnderPointer(scene, w.x, w.y)
-      frameDropHint.current = target ? { runId: target.run.id, u: target.u } : null
+      frameDropHint.current = target ? { runId: target.run.id, struct: target.run.struct, u: target.u } : null
     }
   }
 
@@ -255,17 +256,17 @@ export function CanvasStage() {
         // dropped on an existing frame → place, or prompt if full / too small
         const target = runUnderPointer(scene, w.x, w.y)
         const idx = target ? insertionIndexInRun(target.run, target.u) : undefined
-        s.tryDropAppliance(onFrame.id, s.dragging.typeId, onFrame.run, idx)
+        s.tryDropAppliance(onFrame.id, s.dragging.typeId, onFrame.run, idx, onFrame.struct)
       } else {
         // blank space → auto-create a compatible frame at the drop point
         const target = runUnderPointer(scene, w.x, w.y)
-        if (target) s.addFrameForAppliance(s.dragging.typeId, target.run.id, insertionIndexInRun(target.run, target.u))
+        if (target) s.addFrameForAppliance(s.dragging.typeId, target.run.id, insertionIndexInRun(target.run, target.u), target.run.struct)
         else s.addFrameForAppliance(s.dragging.typeId, 'back')
       }
     } else if (s.dragging?.kind === 'frame') {
       const target = runUnderPointer(scene, w.x, w.y)
       if (target) {
-        s.addFrame(s.dragging.width, insertionIndexInRun(target.run, target.u), s.dragging.lowered, target.run.id)
+        s.addFrame(s.dragging.width, insertionIndexInRun(target.run, target.u), s.dragging.lowered, target.run.id, target.run.struct)
       } else {
         s.addFrame(s.dragging.width, undefined, s.dragging.lowered, 'back')
       }

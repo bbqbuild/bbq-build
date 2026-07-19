@@ -111,6 +111,8 @@ function GroundOptions() {
   const setIslandBar = useStore((s) => s.setIslandBar)
   const setGround = useStore((s) => s.setGround)
   const setIsland = useStore((s) => s.setIsland)
+  const fitGroundToKitchen = useStore((s) => s.fitGroundToKitchen)
+  const hasFrames = useStore((s) => s.design.frames.length > 0)
   const unit = useStore((s) => s.unit)
   const push = useToasts((s) => s.push)
   const [width, setWidth] = useState(ground.width)
@@ -159,6 +161,20 @@ function GroundOptions() {
             setGround({ depth: v })
           }}
         />
+        <button
+          className="btn btn-ghost"
+          disabled={!hasFrames}
+          title="Shrink the platform to the smallest size that holds everything you've built"
+          onClick={() => {
+            fitGroundToKitchen()
+            const g = useStore.getState().design.ground
+            setWidth(g.width)
+            setDepth(groundDepth(g))
+            push('Ground fitted to your kitchen', 'success')
+          }}
+        >
+          ⇱ Fit ground to kitchen
+        </button>
       </SubSection>
 
       <SubSection id="ground_extras" title="Extras" icon="✚" hint="island · pergola" defaultOpen>

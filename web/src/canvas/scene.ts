@@ -94,6 +94,8 @@ export function computeRunElevation(frames: Frame[], appliances: PlacedAppliance
 
 export interface RunScene {
   id: RunId
+  /** id of the independent structure this run belongs to (absent = main) */
+  struct?: string
   frames: Frame[]
   elev: RunElevation
   face: FaceBasis
@@ -112,6 +114,8 @@ export interface RunScene {
 
 export interface CounterTop {
   runId: RunId
+  /** id of the independent structure this top belongs to (absent = main) */
+  struct?: string
   /** plan rect */
   x: number
   z: number
@@ -151,7 +155,75 @@ export function runFrames(design: Design, run: RunId): Frame[] {
   return design.frames.filter((f) => (f.run ?? 'back') === run)
 }
 
+/**
+ * Composite scene: the main kitchen plus any independent structures, each
+ * computed with the same single-structure layout code and translated to its
+ * plan origin. Every downstream consumer (2D plan, 3D build, thumbnails,
+ * hit-testing) sees one merged SceneLayout3.
+ */
 export function computeScene(design: Design): SceneLayout3 {
+  const structs = design.structures ?? []
+  if (!structs.length) return computeSceneOne(design)
+
+  const main = computeSceneOne({
+    ...design,
+    frames: design.frames.filter((f) => !f.struct),
+    appliances: design.appliances.filter((a) => !design.frames.find((f) => f.id === a.frameId)?.struct),
+  })
+
+  for (const st of structs) {
+    const frames = design.frames.filter((f) => f.struct === st.id)
+    const ids = new Set(frames.map((f) => f.id))
+    const sub = computeSceneOne({
+      ...design,
+      layout: st.layout,
+      island: st.island,
+      islandBar: st.islandBar,
+      islandPos: st.islandPos,
+      islandCorner: false,
+      corners: st.corners,
+      pergola: false,
+      frames,
+      appliances: design.appliances.filter((a) => ids.has(a.frameId)),
+    })
+    const { x: ox, z: oz } = st.origin
+    for (const run of sub.runs) {
+      run.struct = st.id
+      run.face.origin.x += ox
+      run.face.origin.z += oz
+      run.plan.x += ox
+      run.plan.z += oz
+      run.depth += oz
+      if (run.endCap) {
+        run.endCap.face.origin.x += ox
+        run.endCap.face.origin.z += oz
+      }
+      main.runs.push(run)
+    }
+    for (const t of sub.counterTops) {
+      t.struct = st.id
+      t.x += ox
+      t.z += oz
+      main.counterTops.push(t)
+    }
+    main.cornerCount += sub.cornerCount
+    main.extents = {
+      x0: Math.min(main.extents.x0, sub.extents.x0 + ox),
+      x1: Math.max(main.extents.x1, sub.extents.x1 + ox),
+      z0: Math.min(main.extents.z0, sub.extents.z0 + oz),
+      z1: Math.max(main.extents.z1, sub.extents.z1 + oz),
+    }
+  }
+
+  const gw = design.ground.width
+  const gd = groundDepth(design.ground)
+  main.overflow =
+    Math.max(-main.extents.x0, main.extents.x1) * 2 > gw || main.extents.z1 > gd - 15 || main.extents.z0 < -15
+  main.bounds = projectedBounds(main.ground, main.extents)
+  return main
+}
+
+function computeSceneOne(design: Design): SceneLayout3 {
   const layout = design.layout ?? 'straight'
   const activeRuns = runsForLayout(layout)
   const hasL = activeRuns.includes('left')
@@ -384,8 +456,16 @@ export function computeScene(design: Design): SceneLayout3 {
   const gd = groundDepth(design.ground)
   const ground = { x: -gw / 2, z: -15, w: gw, d: gd }
   const overflow = extents.x1 - extents.x0 > gw || z1 > gd - 15
+  const bounds = projectedBounds(ground, extents)
 
-  // projected bounds for fit: corners of ground + tall points
+  return { runs, counterTops, ground, cornerCount, overflow, islandCorner, bounds, extents }
+}
+
+/** Projected screen-space bounds for zoom-to-fit: ground corners + tall points. */
+function projectedBounds(
+  ground: { x: number; z: number; w: number; d: number },
+  extents: { x0: number; x1: number; z0: number; z1: number },
+): Rect {
   const pts = [
     project(ground.x, ground.z, -GROUND_T),
     project(ground.x + ground.w, ground.z, 0),
@@ -398,7 +478,5 @@ export function computeScene(design: Design): SceneLayout3 {
   const bx1 = Math.max(...pts.map((p) => p.x))
   const by0 = Math.min(...pts.map((p) => p.y))
   const by1 = Math.max(...pts.map((p) => p.y))
-  const bounds: Rect = { x: bx0, y: by0, w: bx1 - bx0, h: by1 - by0 + GROUND_T }
-
-  return { runs, counterTops, ground, cornerCount, overflow, islandCorner, bounds, extents }
+  return { x: bx0, y: by0, w: bx1 - bx0, h: by1 - by0 + GROUND_T }
 }

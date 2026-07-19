@@ -152,6 +152,30 @@ export default function App() {
     [push],
   )
 
+  // "Start a new design" from the presets panel: keep the current design
+  // (auto-saved for account holders), then open the preset as a fresh design
+  useEffect(() => {
+    const onPresetNew = async (e: Event) => {
+      const preset = (e as CustomEvent).detail?.preset as { name: string; design: Design } | undefined
+      if (!preset) return
+      const st = useStore.getState()
+      if (authedRef.current) {
+        if (st.dirty && st.design.frames.length > 0) await save({ silent: true })
+      } else if (
+        st.design.frames.length > 0 &&
+        !confirm('As a guest you have one design — starting a new one replaces it. Continue?')
+      ) {
+        return
+      }
+      st.setDesign({ ...preset.design, name: preset.name })
+      useStore.setState({ dirty: true, savedId: null })
+      requestAnimationFrame(fitView)
+      push(`Started a new design from “${preset.name}”`, 'success')
+    }
+    window.addEventListener('bbq:preset-new', onPresetNew)
+    return () => window.removeEventListener('bbq:preset-new', onPresetNew)
+  }, [save, push])
+
   // save a guest design into the account right after signup/login
   useEffect(() => {
     if (authed && pendingCarry) {

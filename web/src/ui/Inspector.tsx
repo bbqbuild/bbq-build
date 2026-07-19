@@ -32,6 +32,9 @@ export function Inspector() {
   } else if (selection.kind === 'group') {
     const group = design.groups?.find((g) => g.id === selection.id)
     content = group ? <GroupPanel group={group} /> : <SummaryPanel />
+  } else if (selection.kind === 'struct') {
+    const st = design.structures?.find((s) => s.id === selection.id)
+    content = st ? <StructPanel struct={st} /> : <SummaryPanel />
   } else {
     content = <SummaryPanel />
   }
@@ -119,6 +122,76 @@ function GroupPanel({ group }: { group: import('../types').FrameGroup }) {
   )
 }
 
+function StructPanel({ struct }: { struct: import('../types').Structure }) {
+  const design = useStore((s) => s.design)
+  const renameStructure = useStore((s) => s.renameStructure)
+  const moveStructure = useStore((s) => s.moveStructure)
+  const removeStructure = useStore((s) => s.removeStructure)
+  const select = useStore((s) => s.select)
+  const unit = useStore((s) => s.unit)
+  const frames = design.frames.filter((f) => f.struct === struct.id)
+  const applCount = design.appliances.filter((a) => frames.some((f) => f.id === a.frameId)).length
+  const totalW = frames.reduce((s, f) => s + f.width, 0)
+  const gw = design.ground.width
+
+  return (
+    <div className="panel">
+      <h2>
+        ⧉ Structure <span className="h-hint">{frames.length} frames · {formatLen(totalW, unit)}</span>
+      </h2>
+      <input className="text-input" value={struct.name} onChange={(e) => renameStructure(struct.id, e.target.value)} />
+      <p className="hint">An independent structure on your ground. Click its frames to edit them like any other.</p>
+      <label className="slider-row">
+        <span>
+          Position ⟷ <strong>{formatLen(struct.origin.x, unit)}</strong>
+        </span>
+        <input
+          type="range"
+          min={-Math.round(gw / 2)}
+          max={Math.round(gw / 2)}
+          step={5}
+          value={struct.origin.x}
+          onChange={(e) => moveStructure(struct.id, { x: Number(e.target.value) })}
+        />
+      </label>
+      <label className="slider-row">
+        <span>
+          Distance from back <strong>{formatLen(struct.origin.z, unit)}</strong>
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={1000}
+          step={5}
+          value={struct.origin.z}
+          onChange={(e) => moveStructure(struct.id, { z: Number(e.target.value) })}
+        />
+      </label>
+      <dl className="facts">
+        <div>
+          <dt>Frames</dt>
+          <dd>{frames.length}</dd>
+        </div>
+        <div>
+          <dt>Appliances</dt>
+          <dd>{applCount}</dd>
+        </div>
+      </dl>
+      {frames.length > 0 && (
+        <button className="btn btn-ghost" onClick={() => select({ kind: 'frame', id: frames[0].id })}>
+          Select first frame
+        </button>
+      )}
+      <button
+        className="btn btn-danger-ghost"
+        onClick={() => confirm(`Remove “${struct.name}” and everything in it?`) && removeStructure(struct.id)}
+      >
+        Remove structure
+      </button>
+    </div>
+  )
+}
+
 function SummaryPanel() {
   const design = useStore((s) => s.design)
   const unit = useStore((s) => s.unit)
@@ -145,6 +218,27 @@ function SummaryPanel() {
           <dd className="accent">{formatPrice(total)}</dd>
         </div>
       </dl>
+      {(design.structures?.length ?? 0) > 0 && (
+        <section className="slot">
+          <h3>Structures <span className="h-hint">independent builds on this ground</span></h3>
+          <ul className="group-list">
+            {design.structures!.map((st) => (
+              <li key={st.id}>
+                <button className="group-list-name" onClick={() => useStore.getState().select({ kind: 'struct', id: st.id })}>
+                  ⧉ {st.name} <span>({design.frames.filter((f) => f.struct === st.id).length})</span>
+                </button>
+                <button
+                  className="btn btn-icon"
+                  title="Remove this structure and everything in it"
+                  onClick={() => confirm(`Remove “${st.name}” and everything in it?`) && useStore.getState().removeStructure(st.id)}
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {(design.groups?.length ?? 0) > 0 && (
         <section className="slot">
           <h3>Sections <span className="h-hint">groups for DIY & bulk edits</span></h3>
@@ -182,6 +276,8 @@ function SummaryPanel() {
 function GroundPanel() {
   const ground = useStore((s) => s.design.ground)
   const setGround = useStore((s) => s.setGround)
+  const fitGroundToKitchen = useStore((s) => s.fitGroundToKitchen)
+  const hasFrames = useStore((s) => s.design.frames.length > 0)
   const unit = useStore((s) => s.unit)
   const spec = GROUND_TYPES.find((g) => g.id === ground.type)!
   return (
@@ -212,6 +308,14 @@ function GroundPanel() {
           onChange={(e) => setGround({ width: Number(e.target.value) })}
         />
       </label>
+      <button
+        className="btn btn-ghost"
+        disabled={!hasFrames}
+        title="Shrink the platform to the smallest size that holds everything you've built"
+        onClick={fitGroundToKitchen}
+      >
+        ⇱ Fit ground to kitchen
+      </button>
       <dl className="facts">
         <div>
           <dt>Material</dt>
@@ -240,9 +344,9 @@ function FramePanel({ frame }: { frame: Frame }) {
   const spec = frameSpecByWidth.get(frame.width as never)
   const index = design.frames.findIndex((f) => f.id === frame.id)
 
-  // adjacent frames in the same run; a side is mergeable only if the neighbour
-  // exists and carries no appliance in either zone
-  const runFrames = design.frames.filter((f) => (f.run ?? 'back') === (frame.run ?? 'back'))
+  // adjacent frames in the same run (of the same structure); a side is mergeable
+  // only if the neighbour exists and carries no appliance in either zone
+  const runFrames = design.frames.filter((f) => (f.run ?? 'back') === (frame.run ?? 'back') && f.struct === frame.struct)
   const rIdx = runFrames.findIndex((f) => f.id === frame.id)
   const neighbour = (dir: 'left' | 'right') => (dir === 'left' ? runFrames[rIdx - 1] : runFrames[rIdx + 1])
   const mergeable = (dir: 'left' | 'right') => {
@@ -262,6 +366,15 @@ function FramePanel({ frame }: { frame: Frame }) {
           {formatLen(frame.width, unit)} {frame.lowered ? 'smoker table' : 'module'} · {RUN_NAMES[frame.run ?? 'back']}
         </span>
       </h2>
+      {frame.struct && (
+        <button
+          className="group-chip"
+          onClick={() => useStore.getState().select({ kind: 'struct', id: frame.struct! })}
+          title="This frame is part of an independent structure — click to edit it"
+        >
+          ⧉ {design.structures?.find((s) => s.id === frame.struct)?.name ?? 'Structure'}
+        </button>
+      )}
       {(() => {
         const g = design.groups?.find((x) => x.frameIds.includes(frame.id))
         return g ? (
