@@ -318,6 +318,28 @@ export function applianceWidth(type: ApplianceType, frameWidth: number): number 
   return CABINETRY.test(base) ? frameWidth : Math.min(frameWidth, type.minFrameWidth)
 }
 
+/**
+ * Catalog browse categories (left dock sub-sections), in display order.
+ * Category membership is derived from the painter family, so AI-imported
+ * products land in the right group via their `paintAs`.
+ */
+export const APPLIANCE_CATEGORIES = [
+  { id: 'grills', name: 'Grills', icon: '🔥', match: /^(grill|santamaria)/ },
+  { id: 'kamados', name: 'Kamados & smokers', icon: '🥚', match: /^(egg|primo)/ },
+  { id: 'cooktops', name: 'Griddles & burners', icon: '🍳', match: /^(griddle|burner)/ },
+  { id: 'ovens', name: 'Ovens', icon: '🍕', match: /^(pizza|gozney|taboon)/ },
+  { id: 'sinks', name: 'Sinks & ice', icon: '🚰', match: /^(sink|icebin)/ },
+  { id: 'cooling', name: 'Cooling & drinks', icon: '🥶', match: /^(fridge|kegerator|icemaker)/ },
+  { id: 'storage', name: 'Storage & waste', icon: '🗄️', match: /^(doors|door|drawers|trash|woodstore)/ },
+] as const
+
+export type ApplianceCategoryId = (typeof APPLIANCE_CATEGORIES)[number]['id']
+
+export function applianceCategory(t: ApplianceType): ApplianceCategoryId {
+  const base = t.paintAs ?? t.id
+  return APPLIANCE_CATEGORIES.find((c) => c.match.test(base))?.id ?? 'storage'
+}
+
 /** Counter-level ovens that can sit on a corner unit. */
 export const CORNER_OVENS = APPLIANCES.filter((a) => a.mount === 'oncounter')
 

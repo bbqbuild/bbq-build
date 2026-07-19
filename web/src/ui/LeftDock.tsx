@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { APPLIANCES, fitsFrame } from '../catalog/appliances'
+import { APPLIANCES, APPLIANCE_CATEGORIES, applianceCategory, fitsFrame } from '../catalog/appliances'
 import { toApplianceType, type AiProduct } from '../catalog/aiProducts'
 import { checkPlacement } from '../catalog/compat'
 import { FINISHES, FRAME_SPECS, GROUND_TYPES } from '../catalog/frames'
@@ -9,6 +9,7 @@ import { formatPrice, useStore } from '../state/store'
 import { formatLen } from '../units'
 import { SizeRow } from './SizeRow'
 import { PresetsPanel } from './PresetsPanel'
+import { SubSection } from './SubSection'
 import { useToasts } from './toast'
 import type { ApplianceType, FrameWidth } from '../types'
 
@@ -117,8 +118,7 @@ function GroundOptions() {
 
   return (
     <>
-      <section>
-        <h3>Ground</h3>
+      <SubSection id="ground_surface" title="Surface" icon="▦" defaultOpen>
         <div className="ground-types">
           {GROUND_TYPES.map((g) => (
             <button
@@ -132,6 +132,9 @@ function GroundOptions() {
             </button>
           ))}
         </div>
+      </SubSection>
+
+      <SubSection id="ground_size" title="Size" icon="⤢" defaultOpen>
         <SizeRow
           label="Width"
           cm={width}
@@ -156,10 +159,9 @@ function GroundOptions() {
             setGround({ depth: v })
           }}
         />
-      </section>
+      </SubSection>
 
-      <section>
-        <h3>Extras</h3>
+      <SubSection id="ground_extras" title="Extras" icon="✚" hint="island · pergola" defaultOpen>
         <label className="check-row" title="A freestanding island counter in front of the main run">
           <input type="checkbox" checked={island} onChange={(e) => setIsland(e.target.checked)} />
           <span>Island in front</span>
@@ -194,7 +196,7 @@ function GroundOptions() {
             )}
           </div>
         )}
-      </section>
+      </SubSection>
     </>
   )
 }
@@ -222,10 +224,7 @@ function FramesOptions() {
 
   return (
     <>
-      <section>
-        <h3>
-          Frames <span className="h-hint">adding to {runLabel}</span>
-        </h3>
+      <SubSection id="frames_modules" title="Frames" icon="▣" hint={`adding to ${runLabel}`} defaultOpen>
         <p className="hint">Click to add, or drag onto the canvas to choose the position.</p>
         <div className="frame-cards">
           {FRAME_SPECS.map((f) => (
@@ -288,10 +287,9 @@ function FramesOptions() {
             </div>
           </div>
         </div>
-      </section>
+      </SubSection>
 
-      <section>
-        <h3>Corners <span className="h-hint">turn the counter 90°</span></h3>
+      <SubSection id="frames_corners" title="Corners" icon="◲" hint="turn the counter 90°" defaultOpen>
         <p className="hint">Add a corner to start a wing. New frames then flow into that wing.</p>
         <div className="corner-cards">
           <button className="corner-card" onClick={() => addCorner('diagonal')} disabled={cornersFull}>
@@ -309,11 +307,10 @@ function FramesOptions() {
             <RunPills />
           </div>
         )}
-      </section>
+      </SubSection>
 
       {frames.length > 0 && (
-        <section>
-          <h3>Finish (all frames)</h3>
+        <SubSection id="frames_finish" title="Finish" icon="🎨" hint="all frames" defaultOpen>
           <div className="finish-row">
             {FINISHES.map((f) => (
               <button
@@ -325,7 +322,7 @@ function FramesOptions() {
               />
             ))}
           </div>
-        </section>
+        </SubSection>
       )}
     </>
   )
@@ -385,18 +382,10 @@ function AppliancesOptions() {
   const importedById = new Map<string, ApplianceType>()
   for (const a of [...(design.custom ?? []), ...sharedCatalog]) if (!importedById.has(a.id)) importedById.set(a.id, a)
   const all = [...importedById.values(), ...APPLIANCES]
-  const groups: { title: string; hint: string; items: ApplianceType[] }[] = [
-    {
-      title: 'Counter level',
-      hint: 'Drop-in and on-counter units',
-      items: all.filter((a) => a.zone === 'top'),
-    },
-    {
-      title: 'Under counter',
-      hint: 'Slides into the frame body',
-      items: all.filter((a) => a.zone === 'base'),
-    },
-  ]
+  const groups = APPLIANCE_CATEGORIES.map((c) => ({
+    ...c,
+    items: all.filter((a) => applianceCategory(a) === c.id),
+  })).filter((g) => g.items.length > 0)
 
   return (
     <>
@@ -407,12 +396,11 @@ function AppliancesOptions() {
       ) : (
         <p className="hint">Drag onto a frame in the canvas, or select a frame first and click to place.</p>
       )}
-      <AiProductSearch />
+      <SubSection id="appl_search" title="Real products" icon="✨" hint="powered by Gemini">
+        <AiProductSearch />
+      </SubSection>
       {groups.map((g) => (
-        <section key={g.title}>
-          <h3>
-            {g.title} <span className="h-hint">{g.hint}</span>
-          </h3>
+        <SubSection key={g.id} id={`appl_${g.id}`} title={g.name} icon={g.icon} count={g.items.length} defaultOpen={g.id === 'grills'}>
           <div className="appliance-cards">
             {g.items.map((t) => {
               const check = selectedFrame ? checkPlacement(design, selectedFrame, t) : { ok: true }
@@ -455,7 +443,7 @@ function AppliancesOptions() {
               )
             })}
           </div>
-        </section>
+        </SubSection>
       ))}
     </>
   )
@@ -526,10 +514,7 @@ function AiProductSearch() {
   }
 
   return (
-    <section className="ai-search">
-      <h3>
-        ✨ Real products <span className="h-hint">powered by Gemini</span>
-      </h3>
+    <div className="ai-search">
       <div className="brand-row">
         {BRANDS.map((b) => (
           <button key={b} className="brand-chip" disabled={busy} onClick={() => runSearch(`${b} outdoor kitchen built-in appliances`)}>
@@ -590,7 +575,7 @@ function AiProductSearch() {
           })}
         </div>
       )}
-    </section>
+    </div>
   )
 }
 
