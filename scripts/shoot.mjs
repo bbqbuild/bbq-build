@@ -24,35 +24,34 @@ await page.waitForSelector('.topbar', { timeout: 5000 })
 await page.waitForTimeout(700)
 await page.screenshot({ path: `${OUT}/02-empty.png` })
 
-// open presets, apply Chef's Island
-await page.click('text=✨ Presets')
+// v2 designer: left dock → Presets, apply Chef's Island
+await page.click('.dock-rail-left .rail-btn:has-text("Presets")')
 await page.waitForTimeout(700)
 await page.screenshot({ path: `${OUT}/03-presets.png` })
 await page.click('text=Chef\'s Island')
 await page.waitForTimeout(800)
 await page.screenshot({ path: `${OUT}/04-chefs-island.png` })
 
-// select the middle frame (click canvas center area)
+// select the middle frame (click canvas center area) — right dock switches to Edit
 const canvas = page.locator('.canvas-wrap canvas')
 const box = await canvas.boundingBox()
 await canvas.click({ position: { x: box.width / 2, y: box.height * 0.62 } })
 await page.waitForTimeout(400)
 await page.screenshot({ path: `${OUT}/05-frame-selected.png` })
 
-// spec sheet
-await page.click('text=Spec ·')
+// spec sheet in the right dock
+await page.click('.dock-rail-right .rail-btn:has-text("Spec")')
 await page.waitForTimeout(400)
 await page.screenshot({ path: `${OUT}/06-spec.png` })
-await page.keyboard.press('Escape')
 
-// add a frame from Structure tab
-await page.click('text=Structure')
+// add a frame from the Frames topic
+await page.click('.dock-rail-left .rail-btn:has-text("Frames")')
 await page.click('.frame-card >> nth=1')
 await page.waitForTimeout(400)
 await page.screenshot({ path: `${OUT}/07-frame-added.png` })
 
-// appliances tab with a frame selected
-await page.click('text=Appliances')
+// appliances topic with a frame selected
+await page.click('.dock-rail-left .rail-btn:has-text("Appliances")')
 await page.waitForTimeout(300)
 await page.screenshot({ path: `${OUT}/08-appliances-tab.png` })
 

@@ -9,13 +9,10 @@ import { ChatPanel } from './ui/ChatPanel'
 import { DesignsModal } from './ui/DesignsModal'
 import { HomeScreen } from './ui/HomeScreen'
 import { Landing } from './ui/Landing'
-import { Inspector } from './ui/Inspector'
-import { PresetsModal } from './ui/PresetsModal'
-import { Sidebar } from './ui/Sidebar'
-import { SpecModal } from './ui/SpecModal'
+import { LeftDock } from './ui/LeftDock'
+import { RightDock } from './ui/RightDock'
 import { Toasts } from './ui/Toasts'
 import { TopBar } from './ui/TopBar'
-import { ValidateModal } from './ui/ValidateModal'
 import { DropDecisionModal } from './ui/DropDecisionModal'
 import { NewKitchenWizard } from './ui/NewKitchenWizard'
 import { AdminPanel } from './ui/AdminPanel'
@@ -24,7 +21,7 @@ import { useToasts } from './ui/toast'
 import type { Design } from './types'
 import type { SavedDesign } from './types'
 
-type Modal = 'none' | 'presets' | 'spec' | 'designs' | 'validate'
+type Modal = 'none' | 'designs'
 // landing → public cover; auth → login/signup; home → dashboard; builder → editor; admin → back-office; diy → project portal
 type Route = 'landing' | 'auth' | 'home' | 'builder' | 'admin' | 'diy'
 
@@ -375,10 +372,7 @@ export default function App() {
         onSave={() => (isGuest ? promptSignup('Create a free account to save this design.') : save())}
         saving={saving}
         guest={isGuest}
-        onOpenPresets={() => setModal('presets')}
-        onOpenSpec={() => setModal('spec')}
         onOpenDesigns={() => setModal('designs')}
-        onOpenValidate={() => setModal('validate')}
         onNew={newDesign}
         onHome={goHome}
         onLogout={logout}
@@ -386,15 +380,12 @@ export default function App() {
         onOpenAdmin={() => setRoute('admin')}
       />
       <div className="workspace">
-        <Sidebar />
+        <LeftDock />
         {viewMode === '3d' ? <Stage3D /> : <CanvasStage />}
-        <Inspector />
+        <RightDock />
       </div>
       <ChatPanel />
-      {modal === 'presets' && <PresetsModal onClose={() => setModal('none')} />}
-      {modal === 'spec' && <SpecModal onClose={() => setModal('none')} />}
       {modal === 'designs' && <DesignsModal onClose={() => setModal('none')} />}
-      {modal === 'validate' && <ValidateModal onClose={() => setModal('none')} />}
       {wizard && <NewKitchenWizard onDone={finishWizard} onSkip={() => setWizard(false)} onCancel={cancelWizard} />}
       <DropDecisionModal />
       <Toasts />

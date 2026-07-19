@@ -488,45 +488,100 @@ body {
   z-index: 5;
 }
 
-/* ---------- sidebar ---------- */
+/* ---------- docks (v2 designer: Figma-style rails + panels) ---------- */
 
-.sidebar {
-  width: 280px;
+.dock-rail {
+  width: 64px;
   background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 8px 6px;
+  flex-shrink: 0;
+}
+
+.dock-rail-left {
   border-right: 1px solid var(--border);
+}
+
+.dock-rail-right {
+  border-left: 1px solid var(--border);
+}
+
+.rail-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  background: none;
+  border: none;
+  border-radius: 9px;
+  color: var(--text-dim);
+  padding: 9px 2px 7px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.rail-btn:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.rail-btn.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.rail-icon {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.rail-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.rail-badge {
+  font-size: 9px;
+  font-weight: 800;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.dock-panel {
+  width: 288px;
+  background: var(--panel);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
 }
 
-.tabs {
+.dock-panel-left {
+  border-right: 1px solid var(--border);
+}
+
+.dock-panel-right {
+  border-left: 1px solid var(--border);
+}
+
+.dock-panel-head {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 10px 10px 14px;
   border-bottom: 1px solid var(--border);
 }
 
-.tabs button {
-  flex: 1;
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--text-dim);
-  font-size: 13px;
-  font-weight: 700;
-  padding: 12px 0 10px;
-  cursor: pointer;
-  transition: color 0.12s, border-color 0.12s;
+.dock-panel-head h2 {
+  font-size: 14px;
+  margin: 0;
+  letter-spacing: -0.01em;
 }
 
-.tabs button:hover {
-  color: var(--text);
-}
-
-.tabs button.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
-
-.sidebar-body {
+.dock-panel-body {
   flex: 1;
   overflow-y: auto;
   padding: 14px;
@@ -535,7 +590,7 @@ body {
   gap: 18px;
 }
 
-.sidebar-body section h3,
+.dock-panel-body section h3,
 .panel h3 {
   font-size: 11px;
   font-weight: 800;
@@ -1054,18 +1109,9 @@ input[type='range'] {
   color: var(--text-dim);
 }
 
-/* ---------- inspector ---------- */
-
-.inspector {
-  width: 290px;
-  background: var(--panel);
-  border-left: 1px solid var(--border);
-  overflow-y: auto;
-  flex-shrink: 0;
-}
+/* ---------- selection panel (inside the right dock) ---------- */
 
 .panel {
-  padding: 16px 14px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1272,9 +1318,9 @@ input[type='range'] {
 
 /* presets */
 
-.preset-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+.preset-list {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
@@ -1322,43 +1368,64 @@ input[type='range'] {
   color: var(--accent);
 }
 
-/* spec table */
+/* spec sheet (right dock) */
 
-.spec-table {
-  width: 100%;
-  border-collapse: collapse;
+.spec-lines {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+.spec-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 11px;
+  border-bottom: 1px solid var(--border);
   font-size: 13px;
 }
 
-.spec-table th {
-  text-align: left;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+.spec-line:last-child {
+  border-bottom: none;
+}
+
+.spec-line-what {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.spec-line-what span {
+  font-size: 11.5px;
   color: var(--text-faint);
-  padding: 7px 8px;
-  border-bottom: 1px solid var(--border-light);
 }
 
-.spec-table td {
-  padding: 7px 8px;
-  border-bottom: 1px solid var(--border);
-}
-
-.spec-table .num {
-  text-align: right;
+.spec-line-price {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
 
-.spec-table .dim {
+.spec-line-price span {
+  font-size: 11px;
   color: var(--text-faint);
 }
 
-.spec-table tfoot td {
-  font-weight: 800;
-  border-bottom: none;
-  padding-top: 11px;
+.spec-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 11px;
+  border: 1px solid var(--border-light);
+  border-radius: 9px;
+  background: var(--panel-2);
   font-size: 14px;
+  font-weight: 800;
 }
 
 /* designs list */

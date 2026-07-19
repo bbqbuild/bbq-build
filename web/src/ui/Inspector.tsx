@@ -36,7 +36,8 @@ export function Inspector() {
     content = <SummaryPanel />
   }
 
-  return <aside className="inspector">{content}</aside>
+  // rendered inside the right dock's Edit panel (v2 designer layout)
+  return <>{content}</>
 }
 
 function MultiPanel({ ids }: { ids: string[] }) {

@@ -1,15 +1,12 @@
 import { useState } from 'react'
 import { fitView } from '../canvas/CanvasStage'
 import { camera, zoomStep } from '../canvas/camera'
-import { formatPrice, priceBreakdown, useStore } from '../state/store'
+import { useStore } from '../state/store'
 import { getEmail } from '../auth/api'
 
 interface Props {
   onSave: () => void
-  onOpenPresets: () => void
-  onOpenSpec: () => void
   onOpenDesigns: () => void
-  onOpenValidate: () => void
   onNew: () => void
   onHome: () => void
   onLogout: () => void
@@ -19,7 +16,7 @@ interface Props {
   guest?: boolean
 }
 
-export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onOpenValidate, onNew, onHome, onLogout, onOpenAdmin, isAdmin, saving, guest }: Props) {
+export function TopBar({ onSave, onOpenDesigns, onNew, onHome, onLogout, onOpenAdmin, isAdmin, saving, guest }: Props) {
   const design = useStore((s) => s.design)
   const dirty = useStore((s) => s.dirty)
   const setName = useStore((s) => s.setName)
@@ -43,8 +40,6 @@ export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onOpe
   const toggleOpen = useStore((s) => s.toggleOpen)
   const [menuOpen, setMenuOpen] = useState(false)
   const [nameDraft, setNameDraft] = useState<string | null>(null)
-
-  const { total } = priceBreakdown(design)
 
   function zoom(f: number) {
     window.dispatchEvent(new CustomEvent('bbq:zoom', { detail: { factor: f } }))
@@ -138,24 +133,6 @@ export function TopBar({ onSave, onOpenPresets, onOpenSpec, onOpenDesigns, onOpe
           title="AI assistant chat"
         >
           ✨ Assistant
-        </button>
-        <button className="btn btn-ghost" onClick={onOpenValidate} title="AI feasibility review of your build">
-          🛡 AI Check
-        </button>
-        {(design.diy?.length ?? 0) > 0 && (
-          <button
-            className="btn btn-ghost"
-            title="Your DIY build projects"
-            onClick={() => window.dispatchEvent(new CustomEvent('bbq:diy', { detail: {} }))}
-          >
-            🛠 DIY
-          </button>
-        )}
-        <button className="btn btn-ghost" onClick={onOpenPresets}>
-          Presets
-        </button>
-        <button className="btn btn-ghost" onClick={onOpenSpec} title="Bill of materials">
-          Spec · <strong>{formatPrice(total)}</strong>
         </button>
         {guest ? (
           <button className="btn btn-primary" onClick={onSave}>

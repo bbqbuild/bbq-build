@@ -8,25 +8,70 @@ import { groundDepth, runsForLayout, type RunId } from '../types'
 import { formatPrice, useStore } from '../state/store'
 import { formatLen } from '../units'
 import { SizeRow } from './SizeRow'
+import { PresetsPanel } from './PresetsPanel'
 import { useToasts } from './toast'
 import type { ApplianceType, FrameWidth } from '../types'
 
-type Tab = 'build' | 'appliances'
+type Topic = 'ground' | 'presets' | 'frames' | 'appliances'
 
-export function Sidebar() {
-  const [tab, setTab] = useState<Tab>('build')
+const TOPICS: { id: Topic; icon: string; label: string; title: string }[] = [
+  { id: 'ground', icon: '▦', label: 'Ground', title: 'Ground & extras' },
+  { id: 'presets', icon: '✦', label: 'Presets', title: 'Start from a preset' },
+  { id: 'frames', icon: '▣', label: 'Frames', title: 'Frames & corners' },
+  { id: 'appliances', icon: '🔥', label: 'Appliances', title: 'Appliances' },
+]
+
+/**
+ * Figma-style left dock: a narrow rail of build topics; clicking one opens its
+ * options panel beside the rail (clicking again collapses it).
+ */
+export function LeftDock() {
+  const [open, setOpen] = useState<Topic | null>(() => {
+    const v = localStorage.getItem('bbq_dock_left')
+    if (v === 'none') return null
+    return TOPICS.some((t) => t.id === v) ? (v as Topic) : 'frames'
+  })
+
+  const toggle = (t: Topic) => {
+    const next = open === t ? null : t
+    setOpen(next)
+    localStorage.setItem('bbq_dock_left', next ?? 'none')
+  }
+
+  const active = TOPICS.find((t) => t.id === open)
+
   return (
-    <aside className="sidebar">
-      <nav className="tabs">
-        <button className={tab === 'build' ? 'active' : ''} onClick={() => setTab('build')}>
-          Structure
-        </button>
-        <button className={tab === 'appliances' ? 'active' : ''} onClick={() => setTab('appliances')}>
-          Appliances
-        </button>
+    <>
+      <nav className="dock-rail dock-rail-left" aria-label="Build topics">
+        {TOPICS.map((t) => (
+          <button
+            key={t.id}
+            className={`rail-btn ${open === t.id ? 'active' : ''}`}
+            onClick={() => toggle(t.id)}
+            title={t.title}
+          >
+            <span className="rail-icon">{t.icon}</span>
+            <span className="rail-label">{t.label}</span>
+          </button>
+        ))}
       </nav>
-      {tab === 'build' ? <BuildTab /> : <AppliancesTab />}
-    </aside>
+      {active && (
+        <section className="dock-panel dock-panel-left">
+          <header className="dock-panel-head">
+            <h2>{active.title}</h2>
+            <button className="btn btn-icon" onClick={() => toggle(active.id)} title="Collapse panel">
+              ✕
+            </button>
+          </header>
+          <div className="dock-panel-body">
+            {open === 'ground' && <GroundOptions />}
+            {open === 'presets' && <PresetsPanel />}
+            {open === 'frames' && <FramesOptions />}
+            {open === 'appliances' && <AppliancesOptions />}
+          </div>
+        </section>
+      )}
+    </>
   )
 }
 
@@ -52,9 +97,8 @@ function RunPills() {
   )
 }
 
-function BuildTab() {
+function GroundOptions() {
   const ground = useStore((s) => s.design.ground)
-  const frames = useStore((s) => s.design.frames)
   const island = useStore((s) => Boolean(s.design.island))
   const islandCorner = useStore((s) => Boolean(s.design.islandCorner))
   const addIslandCorner = useStore((s) => s.addIslandCorner)
@@ -64,18 +108,108 @@ function BuildTab() {
   const setPergola = useStore((s) => s.setPergola)
   const islandBar = useStore((s) => Boolean(s.design.islandBar))
   const setIslandBar = useStore((s) => s.setIslandBar)
-  const activeRun = useStore((s) => s.activeRun)
-  const layout = useStore((s) => s.design.layout ?? 'straight')
   const setGround = useStore((s) => s.setGround)
   const setIsland = useStore((s) => s.setIsland)
+  const unit = useStore((s) => s.unit)
+  const push = useToasts((s) => s.push)
+  const [width, setWidth] = useState(ground.width)
+  const [depth, setDepth] = useState(groundDepth(ground))
+
+  return (
+    <>
+      <section>
+        <h3>Ground</h3>
+        <div className="ground-types">
+          {GROUND_TYPES.map((g) => (
+            <button
+              key={g.id}
+              className={`ground-chip ground-${g.id} ${ground.type === g.id ? 'active' : ''}`}
+              onClick={() => setGround({ type: g.id })}
+              title={`${g.name} — ${formatPrice(g.pricePerM)}/m`}
+            >
+              <span className={`swatch swatch-${g.id}`} />
+              {g.name}
+            </button>
+          ))}
+        </div>
+        <SizeRow
+          label="Width"
+          cm={width}
+          unit={unit}
+          min={100}
+          max={1000}
+          onSlide={(v) => setWidth(v)}
+          onCommit={(v) => {
+            setWidth(v)
+            setGround({ width: v })
+          }}
+        />
+        <SizeRow
+          label="Depth"
+          cm={depth}
+          unit={unit}
+          min={120}
+          max={1000}
+          onSlide={(v) => setDepth(v)}
+          onCommit={(v) => {
+            setDepth(v)
+            setGround({ depth: v })
+          }}
+        />
+      </section>
+
+      <section>
+        <h3>Extras</h3>
+        <label className="check-row" title="A freestanding island counter in front of the main run">
+          <input type="checkbox" checked={island} onChange={(e) => setIsland(e.target.checked)} />
+          <span>Island in front</span>
+        </label>
+        {island && (
+          <label className="check-row" title="Counter overhangs one side with bar stools; appliances face the cook">
+            <input type="checkbox" checked={islandBar} onChange={(e) => setIslandBar(e.target.checked)} />
+            <span>Bar seating on island</span>
+          </label>
+        )}
+        <label className="check-row" title="A slatted pergola over the kitchen">
+          <input type="checkbox" checked={pergola} onChange={(e) => setPergola(e.target.checked)} />
+          <span>Pergola overhead</span>
+        </label>
+        {island && (
+          <div className="island-corner-row">
+            {islandCorner ? (
+              <button className="btn btn-ghost btn-sm" onClick={removeIslandCorner}>
+                Remove island corner
+              </button>
+            ) : (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  addIslandCorner('diagonal')
+                  setActiveRunAction('island-wing')
+                  push('Island corner added — new frames flow into the island wing', 'success')
+                }}
+              >
+                + Add island corner (L-shape)
+              </button>
+            )}
+          </div>
+        )}
+      </section>
+    </>
+  )
+}
+
+function FramesOptions() {
+  const frames = useStore((s) => s.design.frames)
+  const island = useStore((s) => Boolean(s.design.island))
+  const activeRun = useStore((s) => s.activeRun)
+  const layout = useStore((s) => s.design.layout ?? 'straight')
   const addFrame = useStore((s) => s.addFrame)
   const addCornerUnit = useStore((s) => s.addCornerUnit)
   const setAllFinishes = useStore((s) => s.setAllFinishes)
   const setDragging = useStore((s) => s.setDragging)
   const unit = useStore((s) => s.unit)
   const push = useToasts((s) => s.push)
-  const [width, setWidth] = useState(ground.width)
-  const [depth, setDepth] = useState(groundDepth(ground))
 
   const cornersFull = layout === 'u'
   const runLabel = { back: 'main run', left: 'left wing', right: 'right wing', island: 'island', 'island-wing': 'island wing' }[activeRun]
@@ -87,7 +221,7 @@ function BuildTab() {
   }
 
   return (
-    <div className="sidebar-body">
+    <>
       <section>
         <h3>
           Frames <span className="h-hint">adding to {runLabel}</span>
@@ -169,26 +303,6 @@ function BuildTab() {
             Square
           </button>
         </div>
-        {island && (
-          <div className="island-corner-row">
-            {islandCorner ? (
-              <button className="btn btn-ghost btn-sm" onClick={removeIslandCorner}>
-                Remove island corner
-              </button>
-            ) : (
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => {
-                  addIslandCorner('diagonal')
-                  setActiveRunAction('island-wing')
-                  push('Island corner added — new frames flow into the island wing', 'success')
-                }}
-              >
-                + Add island corner (L-shape)
-              </button>
-            )}
-          </div>
-        )}
         {(layout !== 'straight' || island) && (
           <div className="run-switch">
             <span>New frames go to:</span>
@@ -213,88 +327,11 @@ function BuildTab() {
           </div>
         </section>
       )}
-
-      <CollapsibleSection title="Ground & extras" storageKey="bbq_ground_open">
-        <label className="check-row" title="A freestanding island counter in front of the main run">
-          <input type="checkbox" checked={island} onChange={(e) => setIsland(e.target.checked)} />
-          <span>Island in front</span>
-        </label>
-        {island && (
-          <label className="check-row" title="Counter overhangs one side with bar stools; appliances face the cook">
-            <input type="checkbox" checked={islandBar} onChange={(e) => setIslandBar(e.target.checked)} />
-            <span>Bar seating on island</span>
-          </label>
-        )}
-        <label className="check-row" title="A slatted pergola over the kitchen">
-          <input type="checkbox" checked={pergola} onChange={(e) => setPergola(e.target.checked)} />
-          <span>Pergola overhead</span>
-        </label>
-
-        <h4 className="sub-h">Ground</h4>
-        <div className="ground-types">
-          {GROUND_TYPES.map((g) => (
-            <button
-              key={g.id}
-              className={`ground-chip ground-${g.id} ${ground.type === g.id ? 'active' : ''}`}
-              onClick={() => setGround({ type: g.id })}
-              title={`${g.name} — ${formatPrice(g.pricePerM)}/m`}
-            >
-              <span className={`swatch swatch-${g.id}`} />
-              {g.name}
-            </button>
-          ))}
-        </div>
-        <SizeRow
-          label="Width"
-          cm={width}
-          unit={unit}
-          min={100}
-          max={1000}
-          onSlide={(v) => setWidth(v)}
-          onCommit={(v) => {
-            setWidth(v)
-            setGround({ width: v })
-          }}
-        />
-        <SizeRow
-          label="Depth"
-          cm={depth}
-          unit={unit}
-          min={120}
-          max={1000}
-          onSlide={(v) => setDepth(v)}
-          onCommit={(v) => {
-            setDepth(v)
-            setGround({ depth: v })
-          }}
-        />
-      </CollapsibleSection>
-    </div>
+    </>
   )
 }
 
-function CollapsibleSection({ title, storageKey, children }: { title: string; storageKey: string; children: React.ReactNode }) {
-  const [open, setOpen] = useState(() => localStorage.getItem(storageKey) === 'open')
-  return (
-    <section className="collapsible">
-      <button
-        className="collapsible-head"
-        onClick={() => {
-          const next = !open
-          setOpen(next)
-          localStorage.setItem(storageKey, next ? 'open' : 'closed')
-        }}
-      >
-        <span className={`chevron ${open ? 'open' : ''}`}>▸</span>
-        {title}
-      </button>
-      {open && <div className="collapsible-body">{children}</div>}
-    </section>
-  )
-}
-
-
-function AppliancesTab() {
+function AppliancesOptions() {
   const setDragging = useStore((s) => s.setDragging)
   const selection = useStore((s) => s.selection)
   const design = useStore((s) => s.design)
@@ -362,7 +399,7 @@ function AppliancesTab() {
   ]
 
   return (
-    <div className="sidebar-body">
+    <>
       {selectedFrame ? (
         <p className="hint hint-active">
           Placing into the selected <strong>{formatLen(selectedFrame.width, unit)}</strong> frame. Greyed items don't fit.
@@ -420,7 +457,7 @@ function AppliancesTab() {
           </div>
         </section>
       ))}
-    </div>
+    </>
   )
 }
 
