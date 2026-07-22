@@ -204,6 +204,13 @@ export async function aiDiyStepAsk(section: unknown, step: import('../types').Di
   return request('/api/ai/diy-step-ask', { method: 'POST', body: JSON.stringify({ section, step, question }) })
 }
 
+export async function aiRenderPhotos(
+  images: { view: string; dataUrl: string }[],
+  facts: string,
+): Promise<{ photos: { view: string; image: string }[] }> {
+  return request('/api/ai/render-photos', { method: 'POST', body: JSON.stringify({ images, facts }) })
+}
+
 export async function aiChat(
   messages: { role: 'user' | 'assistant'; content: string }[],
   design: Design,

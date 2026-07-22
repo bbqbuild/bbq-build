@@ -621,6 +621,61 @@ async function diyStepAsk(section, step, question) {
   return { answer: text.trim() }
 }
 
+// ---------- AI photo renders ----------
+
+/**
+ * Turn one raw 3D-model screenshot into a photorealistic photo of the SAME
+ * kitchen from the SAME angle. The screenshot is passed as an input image
+ * (not just described in text) so the model has the exact geometry to match;
+ * `factsText` (a plain-English spec summary) is passed alongside so materials/
+ * appliances that don't read clearly in the low-poly render still come out right.
+ */
+async function renderPhoto(view, dataUrl, factsText) {
+  const m = /^data:(image\/\w+);base64,(.+)$/.exec(dataUrl || '')
+  if (!m) throw Object.assign(new Error('Each image must be a base64 data URL'), { status: 400 })
+  const [, mimeType, data] = m
+  const prompt =
+    `This is a screenshot of a low-poly 3D model of a custom outdoor BBQ kitchen (camera angle: "${view}"). ` +
+    `It is geometrically exact — every cabinet, counter run, corner and appliance is in its real position — but not ` +
+    `photorealistic.\n\n` +
+    `Turn it into ONE convincing, photorealistic lifestyle photo of the SAME kitchen from the SAME camera angle and ` +
+    `framing. Do not add, remove, resize, recolor or relocate any cabinet, appliance, counter section or corner, and do ` +
+    `not invent a different layout — match the reference image's geometry exactly. Render believable materials, a ` +
+    `natural backyard setting (patio pavers or deck, some greenery, soft daylight), and realistic shadows and ` +
+    `reflections. The reference image may have dimension labels/measurement callouts overlaid on it (small dark ` +
+    `pills with numbers and inches marks) — those are design-tool UI, not part of the kitchen; ignore them and leave ` +
+    `them out entirely. No people, no other text, no watermarks, no logos.\n\n` +
+    `DESIGN FACTS (must match exactly — use these for materials/appliance identity the image alone can't convey):\n${factsText}`
+  const res = await fetch(`${GEMINI_BASE}/${IMAGE_MODEL}:generateContent`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey() },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: prompt }, { inlineData: { mimeType, data } }] }],
+      generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+    }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw Object.assign(new Error(`Photo render failed (${res.status}): ${text.slice(0, 200)}`), { status: 502 })
+  }
+  const json = await res.json()
+  const parts = json.candidates?.[0]?.content?.parts ?? []
+  const img = parts.find((p) => p.inlineData?.data)
+  if (!img) throw Object.assign(new Error('No image returned — try again'), { status: 502 })
+  return { view, image: `data:${img.inlineData.mimeType || 'image/png'};base64,${img.inlineData.data}` }
+}
+
+/** Render each of a few captured 3D angles into a photorealistic photo. Sequential to stay gentle on rate limits. */
+async function renderPhotos(images, factsText) {
+  if (!Array.isArray(images) || !images.length) throw Object.assign(new Error('images is required'), { status: 400 })
+  if (images.length > 4) throw Object.assign(new Error('Max 4 photos per request'), { status: 400 })
+  const photos = []
+  for (const shot of images) {
+    photos.push(await renderPhoto(String(shot?.view ?? 'view'), String(shot?.dataUrl ?? ''), factsText))
+  }
+  return { photos }
+}
+
 // ---------- chat assistant ----------
 
 const CHAT_SCHEMA = {
@@ -743,4 +798,14 @@ async function chat(messages, design, catalogSummary) {
   return result
 }
 
-module.exports = { searchAppliances, validateBuild, chat, scanUrl, diyQuestions, diyPlan, diyStepImage, diyStepAsk }
+module.exports = {
+  searchAppliances,
+  validateBuild,
+  chat,
+  scanUrl,
+  diyQuestions,
+  diyPlan,
+  diyStepImage,
+  diyStepAsk,
+  renderPhotos,
+}

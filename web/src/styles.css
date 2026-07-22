@@ -1441,6 +1441,68 @@ input[type='range'] {
   margin-top: 2px;
 }
 
+.render-gallery {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.render-shot {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--panel-2);
+}
+
+.render-shot img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+.render-shot-loading {
+  position: relative;
+}
+
+.render-shot-loading img {
+  filter: brightness(0.55) saturate(0.6);
+}
+
+.render-shot-loading .chat-typing {
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.render-shot figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.render-video {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.render-video video {
+  width: 100%;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: #000;
+}
+
 .preset-card {
   background: var(--panel-2);
   border: 1px solid var(--border);

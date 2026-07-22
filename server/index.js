@@ -64,7 +64,7 @@ async function main() {
   const storage = await createStorage()
   const app = express()
   app.use(compression())
-  app.use(express.json({ limit: '1mb' }))
+  app.use(express.json({ limit: '3mb' })) // headroom for the AI render feature's base64 screenshots
 
   // ---- auth (Supabase) ----
   // Legacy HMAC login kept as a fallback when Supabase isn't configured.
@@ -257,6 +257,16 @@ async function main() {
         throw Object.assign(new Error('section, step and question are required'), { status: 400 })
       }
       return ai.diyStepAsk(section, step, question.trim().slice(0, 500))
+    }),
+  )
+
+  aiRouter.post(
+    '/render-photos',
+    aiHandler(async (req) => {
+      const { images, facts } = req.body ?? {}
+      if (!Array.isArray(images) || !images.length) throw Object.assign(new Error('images are required'), { status: 400 })
+      if (images.length > 4) throw Object.assign(new Error('Max 4 photos per request'), { status: 400 })
+      return ai.renderPhotos(images, String(facts ?? '').slice(0, 4000))
     }),
   )
 

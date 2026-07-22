@@ -24,7 +24,8 @@ export function Stage3D() {
 
   useEffect(() => {
     const wrap = wrapRef.current!
-    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    // preserveDrawingBuffer so AI-photo screenshots (toDataURL) reliably see the last render
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1))
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
@@ -108,6 +109,9 @@ export function Stage3D() {
     let downPos: { x: number; y: number } | null = null
     let downHit: THREE.Object3D | null = null
     let openT = 0
+    // true while a photo capture or flythrough recording is overriding the camera —
+    // pointer interaction is suspended so the user can't fight the scripted camera
+    let capturing = false
 
     function resize() {
       const w = wrap.clientWidth
@@ -160,6 +164,135 @@ export function Stage3D() {
     window.addEventListener('bbq:fit', onFit)
     window.addEventListener('bbq:zoom', onZoom)
 
+    // ---------- AI photos: screenshot the real model from a few fixed angles ----------
+
+    /** Downscale + JPEG-compress the canvas so 3-4 shots stay well under the request body limit. */
+    function toResizedJpeg(maxDim = 900, quality = 0.85): string {
+      const src = renderer.domElement
+      const scale = Math.min(1, maxDim / Math.max(src.width, src.height))
+      const w = Math.max(1, Math.round(src.width * scale))
+      const h = Math.max(1, Math.round(src.height * scale))
+      const off = document.createElement('canvas')
+      off.width = w
+      off.height = h
+      off.getContext('2d')!.drawImage(src, 0, 0, w, h)
+      return off.toDataURL('image/jpeg', quality)
+    }
+
+    const CAPTURE_SHOTS: { view: string; dir: [number, number, number]; distMul: number }[] = [
+      { view: 'Three-quarter (left)', dir: [0.55, 0.3, 1], distMul: 2.0 },
+      { view: 'Three-quarter (right)', dir: [-0.55, 0.3, 1], distMul: 2.0 },
+      { view: 'Straight-on', dir: [0, 0.18, 1], distMul: 2.35 },
+      { view: 'High angle', dir: [0.35, 0.95, 0.55], distMul: 2.1 },
+    ]
+
+    function capturePhotos(): { view: string; dataUrl: string }[] {
+      if (!kitchen) return []
+      const savedPos = camera.position.clone()
+      const savedTarget = controls.target.clone()
+      const c = kitchen.center
+      const r = Math.max(kitchen.radius, 120)
+      const shots: { view: string; dataUrl: string }[] = []
+      for (const shot of CAPTURE_SHOTS) {
+        controls.target.copy(c)
+        const dir = new THREE.Vector3(...shot.dir).normalize()
+        camera.position.copy(c.clone().add(dir.multiplyScalar(r * shot.distMul)))
+        controls.update()
+        renderer.render(scene, camera)
+        shots.push({ view: shot.view, dataUrl: toResizedJpeg() })
+      }
+      camera.position.copy(savedPos)
+      controls.target.copy(savedTarget)
+      controls.update()
+      renderer.render(scene, camera)
+      return shots
+    }
+
+    const onCaptureRequest = () => {
+      if (capturing) return
+      const shots = capturePhotos()
+      window.dispatchEvent(new CustomEvent('bbq:photos-captured', { detail: { shots } }))
+    }
+    window.addEventListener('bbq:capture-photos', onCaptureRequest)
+
+    // ---------- AI video: record a scripted orbit of the real model ----------
+
+    async function runFlythrough() {
+      if (!kitchen || capturing) return
+      capturing = true
+      const savedPos = camera.position.clone()
+      const savedTarget = controls.target.clone()
+      const savedEnabled = controls.enabled
+      controls.enabled = false
+      const c = kitchen.center
+      const r = Math.max(kitchen.radius, 140)
+      const DURATION = 7000
+
+      let stream: MediaStream
+      try {
+        stream = renderer.domElement.captureStream(30)
+      } catch {
+        capturing = false
+        controls.enabled = savedEnabled
+        window.dispatchEvent(
+          new CustomEvent('bbq:flythrough-error', { detail: { message: 'Video recording is not supported in this browser' } }),
+        )
+        return
+      }
+      const mime =
+        ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find((m) => MediaRecorder.isTypeSupported(m)) ||
+        'video/webm'
+      const chunks: BlobPart[] = []
+      let rec: MediaRecorder
+      try {
+        rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 6_000_000 })
+      } catch {
+        capturing = false
+        controls.enabled = savedEnabled
+        window.dispatchEvent(new CustomEvent('bbq:flythrough-error', { detail: { message: 'Could not start the recorder' } }))
+        return
+      }
+      rec.ondataavailable = (e) => {
+        if (e.data.size) chunks.push(e.data)
+      }
+      const stopped = new Promise<Blob>((resolve) => {
+        rec.onstop = () => resolve(new Blob(chunks, { type: mime }))
+      })
+      rec.start()
+
+      const t0 = performance.now()
+      await new Promise<void>((resolve) => {
+        function step(now: number) {
+          const t = Math.min(1, (now - t0) / DURATION)
+          window.dispatchEvent(new CustomEvent('bbq:flythrough-progress', { detail: { pct: Math.round(t * 100) } }))
+          // ~1.3 turns around the kitchen with a gentle rise/fall and a slow push-in
+          const angle = -Math.PI * 0.55 + t * Math.PI * 1.3
+          const height = 0.28 + 0.24 * Math.sin(t * Math.PI)
+          const dist = r * (2.6 - 0.75 * Math.sin(t * Math.PI * 0.85))
+          const dir = new THREE.Vector3(Math.sin(angle), height, Math.cos(angle))
+          camera.position.copy(c.clone().add(dir.multiplyScalar(dist)))
+          camera.lookAt(c.clone().add(new THREE.Vector3(0, 20, 0)))
+          renderer.render(scene, camera)
+          if (t < 1) requestAnimationFrame(step)
+          else resolve()
+        }
+        requestAnimationFrame(step)
+      })
+
+      rec.stop()
+      const blob = await stopped
+      camera.position.copy(savedPos)
+      controls.target.copy(savedTarget)
+      controls.enabled = savedEnabled
+      controls.update()
+      capturing = false
+      window.dispatchEvent(new CustomEvent('bbq:flythrough-done', { detail: { url: URL.createObjectURL(blob) } }))
+    }
+    const onFlythroughRequest = () => {
+      runFlythrough()
+    }
+    window.addEventListener('bbq:flythrough-start', onFlythroughRequest)
+
     // ---------- picking ----------
 
     function pick(clientX: number, clientY: number): THREE.Intersection | null {
@@ -194,7 +327,7 @@ export function Stage3D() {
     // ---------- pointer handlers ----------
 
     function onPointerDown(e: PointerEvent) {
-      if (e.button !== 0) return
+      if (e.button !== 0 || capturing) return
       const s = useStore.getState()
       const hit = pick(e.clientX, e.clientY)
       downPos = { x: e.clientX, y: e.clientY }
@@ -221,6 +354,7 @@ export function Stage3D() {
     }
 
     function onPointerMove(e: PointerEvent) {
+      if (capturing) return
       const s = useStore.getState()
       if (islandDrag && kitchen) {
         const r = renderer.domElement.getBoundingClientRect()
@@ -613,6 +747,8 @@ export function Stage3D() {
       ro.disconnect()
       window.removeEventListener('bbq:fit', onFit)
       window.removeEventListener('bbq:zoom', onZoom)
+      window.removeEventListener('bbq:capture-photos', onCaptureRequest)
+      window.removeEventListener('bbq:flythrough-start', onFlythroughRequest)
       renderer.domElement.remove()
       renderer.dispose()
       controls.dispose()

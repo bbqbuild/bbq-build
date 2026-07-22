@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { aiValidate, type ValidationReport } from '../auth/api'
+import { aiRenderPhotos, aiValidate, type ValidationReport } from '../auth/api'
 import { catalogSummary } from '../catalog/appliances'
 import { analyzeBuild } from '../catalog/analyze'
 import { formatPrice, priceBreakdown, useStore } from '../state/store'
@@ -8,11 +8,12 @@ import type { Design } from '../types'
 import { Inspector } from './Inspector'
 import { useToasts } from './toast'
 
-type Tab = 'selection' | 'spec' | 'quotes' | 'diy' | 'quality'
+type Tab = 'selection' | 'spec' | 'render' | 'quotes' | 'diy' | 'quality'
 
 const TABS: { id: Tab; icon: string; label: string; title: string }[] = [
   { id: 'selection', icon: '✏️', label: 'Edit', title: 'Edit selection' },
   { id: 'spec', icon: '🧾', label: 'Spec', title: 'Spec sheet & price' },
+  { id: 'render', icon: '📷', label: 'Render', title: 'AI photos & video' },
   { id: 'quotes', icon: '📨', label: 'Quotes', title: 'Get Quotes' },
   { id: 'diy', icon: '🛠', label: 'DIY', title: 'DIY build projects' },
   { id: 'quality', icon: '🛡', label: 'Quality', title: 'Quality Check' },
@@ -21,6 +22,7 @@ const TABS: { id: Tab; icon: string; label: string; title: string }[] = [
 const TITLES: Record<Tab, string> = {
   selection: 'Edit',
   spec: 'Spec',
+  render: 'AI Render',
   quotes: 'Get Quotes',
   diy: 'DIY',
   quality: 'Quality Check',
@@ -66,6 +68,7 @@ export function RightDock() {
           <div className="dock-panel-body">
             {open === 'selection' && <Inspector />}
             {open === 'spec' && <SpecPanel />}
+            {open === 'render' && <RenderPanel />}
             {open === 'quotes' && <QuotesPanel />}
             {open === 'diy' && <DiyPanel />}
             {open === 'quality' && <QualityPanel />}
@@ -90,8 +93,8 @@ export function RightDock() {
   )
 }
 
-/** Plain-text spec — used for the mailto body in Get Quotes. */
-function specAsText(design: Design, unit: Unit) {
+/** Plain-text spec — used for the mailto body in Get Quotes, and as the "facts" the AI render must match. */
+export function specAsText(design: Design, unit: Unit) {
   const { lines, total } = priceBreakdown(design, unit)
   const rows = lines.map((l) => `- ${l.label} (${l.detail}) x${l.qty} — ${formatPrice(l.total)}`)
   return [
@@ -156,6 +159,167 @@ function SpecPanel() {
       <button className="btn btn-ghost" onClick={exportJson}>
         ⬇ Export spec (JSON)
       </button>
+    </>
+  )
+}
+
+type Shot = { view: string; raw: string; image?: string; done: boolean }
+
+/** Wait for the 3D stage to actually be mounted and have rendered at least one frame. */
+function whenStage3DReady(cb: () => void, deadline = Date.now() + 3000) {
+  if (document.querySelector('.stage3d-canvas')) {
+    setTimeout(cb, 120)
+    return
+  }
+  if (Date.now() > deadline) {
+    cb() // give up waiting and try anyway rather than silently doing nothing
+    return
+  }
+  requestAnimationFrame(() => whenStage3DReady(cb, deadline))
+}
+
+/**
+ * AI photos: screenshots the real 3D model from a few fixed angles, then asks Gemini
+ * to turn each into a photorealistic photo of the SAME kitchen (image-to-image, not a
+ * from-scratch generation, so layout/appliances stay accurate).
+ *
+ * AI video: records a scripted camera orbit of the real 3D model client-side (canvas
+ * captureStream + MediaRecorder) — an exact walkthrough of what was actually built,
+ * with no per-clip generation cost or wait.
+ */
+function RenderPanel() {
+  const design = useStore((s) => s.design)
+  const [photos, setPhotos] = useState<Shot[] | null>(null)
+  const [generating, setGenerating] = useState(false)
+  const [photoError, setPhotoError] = useState<string | null>(null)
+  const [videoUrl, setVideoUrl] = useState<string | null>(null)
+  const [videoPct, setVideoPct] = useState<number | null>(null)
+  const [videoError, setVideoError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const onShots = (e: Event) => {
+      const shots = ((e as CustomEvent).detail?.shots ?? []) as { view: string; dataUrl: string }[]
+      if (!shots.length) {
+        setGenerating(false)
+        setPhotoError('Nothing to render yet — add some frames first.')
+        return
+      }
+      setPhotos(shots.map((s) => ({ view: s.view, raw: s.dataUrl, done: false })))
+      aiRenderPhotos(shots, specAsText(useStore.getState().design, useStore.getState().unit))
+        .then((res) => {
+          setPhotos(shots.map((s, i) => ({ view: s.view, raw: s.dataUrl, image: res.photos[i]?.image, done: true })))
+        })
+        .catch((err) => {
+          setPhotoError(err instanceof Error ? err.message : 'Rendering failed — try again')
+          // stop showing the loading shimmer even though we never got an AI image back —
+          // fall back to the raw 3D screenshots rather than spinning forever
+          setPhotos(shots.map((s) => ({ view: s.view, raw: s.dataUrl, done: true })))
+        })
+        .finally(() => setGenerating(false))
+    }
+    window.addEventListener('bbq:photos-captured', onShots)
+    return () => window.removeEventListener('bbq:photos-captured', onShots)
+  }, [])
+
+  useEffect(() => {
+    const onProgress = (e: Event) => setVideoPct((e as CustomEvent).detail?.pct ?? null)
+    const onDone = (e: Event) => {
+      setVideoUrl((e as CustomEvent).detail?.url ?? null)
+      setVideoPct(null)
+    }
+    const onErr = (e: Event) => {
+      setVideoError((e as CustomEvent).detail?.message ?? 'Could not record a video')
+      setVideoPct(null)
+    }
+    window.addEventListener('bbq:flythrough-progress', onProgress)
+    window.addEventListener('bbq:flythrough-done', onDone)
+    window.addEventListener('bbq:flythrough-error', onErr)
+    return () => {
+      window.removeEventListener('bbq:flythrough-progress', onProgress)
+      window.removeEventListener('bbq:flythrough-done', onDone)
+      window.removeEventListener('bbq:flythrough-error', onErr)
+    }
+  }, [])
+
+  const generatePhotos = () => {
+    setGenerating(true)
+    setPhotoError(null)
+    setPhotos(null)
+    if (useStore.getState().viewMode !== '3d') useStore.getState().toggleView()
+    whenStage3DReady(() => window.dispatchEvent(new CustomEvent('bbq:capture-photos')))
+  }
+
+  const recordVideo = () => {
+    setVideoError(null)
+    setVideoUrl(null)
+    setVideoPct(0)
+    if (useStore.getState().viewMode !== '3d') useStore.getState().toggleView()
+    whenStage3DReady(() => window.dispatchEvent(new CustomEvent('bbq:flythrough-start')))
+  }
+
+  const empty = design.frames.length === 0
+  const fileBase = (design.name || 'kitchen').replace(/\s+/g, '-').toLowerCase()
+
+  return (
+    <>
+      <section>
+        <h3>AI photos</h3>
+        <p className="hint">
+          Turns your exact 3D model into a few photorealistic shots — same layout, same appliances, same finish.
+        </p>
+        <button className="btn btn-primary" onClick={generatePhotos} disabled={empty || generating}>
+          {generating ? 'Rendering…' : '📷 Generate photos'}
+        </button>
+        {photoError && <div className="login-error">{photoError}</div>}
+        {photos && (
+          <div className="render-gallery">
+            {photos.map((p, i) => (
+              <figure className="render-shot" key={i}>
+                {!p.done ? (
+                  <div className="render-shot-loading">
+                    <img src={p.raw} alt={p.view} />
+                    <div className="chat-typing">
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                  </div>
+                ) : (
+                  <img src={p.image ?? p.raw} alt={p.view} />
+                )}
+                <figcaption>
+                  <span>{p.view}</span>
+                  {p.image && (
+                    <a className="btn btn-sm btn-ghost" href={p.image} download={`${fileBase}-${i + 1}.png`}>
+                      ⬇
+                    </a>
+                  )}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        )}
+      </section>
+      <section>
+        <h3>AI video</h3>
+        <p className="hint">
+          Records a smooth camera flythrough of your real 3D model — an exact walkthrough of what you built, ready in
+          seconds.
+        </p>
+        <button className="btn btn-primary" onClick={recordVideo} disabled={empty || videoPct !== null}>
+          {videoPct !== null ? `Recording… ${videoPct}%` : '🎬 Record flythrough'}
+        </button>
+        {videoError && <div className="login-error">{videoError}</div>}
+        {videoUrl && (
+          <div className="render-video">
+            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+            <video src={videoUrl} controls loop />
+            <a className="btn btn-ghost" href={videoUrl} download={`${fileBase}-flythrough.webm`}>
+              ⬇ Download video
+            </a>
+          </div>
+        )}
+      </section>
     </>
   )
 }
