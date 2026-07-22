@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { aiRenderPhotos, aiValidate, type ValidationReport } from '../auth/api'
+import { aiValidate, type ValidationReport } from '../auth/api'
 import { catalogSummary } from '../catalog/appliances'
 import { analyzeBuild } from '../catalog/analyze'
+import { specAsText } from '../spec'
 import { formatPrice, priceBreakdown, useStore } from '../state/store'
-import { formatLen, type Unit } from '../units'
-import type { Design } from '../types'
+import { formatLen } from '../units'
 import { Inspector } from './Inspector'
+import { useRenderState } from './renderState'
 import { useToasts } from './toast'
 
 type Tab = 'selection' | 'spec' | 'render' | 'quotes' | 'diy' | 'quality'
@@ -93,22 +94,6 @@ export function RightDock() {
   )
 }
 
-/** Plain-text spec — used for the mailto body in Get Quotes, and as the "facts" the AI render must match. */
-export function specAsText(design: Design, unit: Unit) {
-  const { lines, total } = priceBreakdown(design, unit)
-  const rows = lines.map((l) => `- ${l.label} (${l.detail}) x${l.qty} — ${formatPrice(l.total)}`)
-  return [
-    `Outdoor kitchen spec — ${design.name}`,
-    `${design.frames.length} frames · ${formatLen(design.frames.reduce((s, f) => s + f.width, 0), unit)} run`,
-    '',
-    ...rows,
-    '',
-    `Estimated total: ${formatPrice(total)}`,
-    '',
-    'Designed on bbq.build',
-  ].join('\n')
-}
-
 function SpecPanel() {
   const design = useStore((s) => s.design)
   const unit = useStore((s) => s.unit)
@@ -163,21 +148,6 @@ function SpecPanel() {
   )
 }
 
-type Shot = { view: string; raw: string; image?: string; done: boolean }
-
-/** Wait for the 3D stage to actually be mounted and have rendered at least one frame. */
-function whenStage3DReady(cb: () => void, deadline = Date.now() + 3000) {
-  if (document.querySelector('.stage3d-canvas')) {
-    setTimeout(cb, 120)
-    return
-  }
-  if (Date.now() > deadline) {
-    cb() // give up waiting and try anyway rather than silently doing nothing
-    return
-  }
-  requestAnimationFrame(() => whenStage3DReady(cb, deadline))
-}
-
 /**
  * AI photos: screenshots the real 3D model from a few fixed angles, then asks Gemini
  * to turn each into a photorealistic photo of the SAME kitchen (image-to-image, not a
@@ -186,76 +156,15 @@ function whenStage3DReady(cb: () => void, deadline = Date.now() + 3000) {
  * AI video: records a scripted camera orbit of the real 3D model client-side (canvas
  * captureStream + MediaRecorder) — an exact walkthrough of what was actually built,
  * with no per-clip generation cost or wait.
+ *
+ * Generation/recording state lives in `useRenderState` (a standalone store, not local
+ * state) so closing this panel or switching to another dock tab mid-run doesn't lose
+ * progress or the finished result — reopening shows exactly where things left off, with
+ * a Regenerate option rather than the plain "Generate" button reappearing.
  */
 function RenderPanel() {
   const design = useStore((s) => s.design)
-  const [photos, setPhotos] = useState<Shot[] | null>(null)
-  const [generating, setGenerating] = useState(false)
-  const [photoError, setPhotoError] = useState<string | null>(null)
-  const [videoUrl, setVideoUrl] = useState<string | null>(null)
-  const [videoPct, setVideoPct] = useState<number | null>(null)
-  const [videoError, setVideoError] = useState<string | null>(null)
-
-  useEffect(() => {
-    const onShots = (e: Event) => {
-      const shots = ((e as CustomEvent).detail?.shots ?? []) as { view: string; dataUrl: string }[]
-      if (!shots.length) {
-        setGenerating(false)
-        setPhotoError('Nothing to render yet — add some frames first.')
-        return
-      }
-      setPhotos(shots.map((s) => ({ view: s.view, raw: s.dataUrl, done: false })))
-      aiRenderPhotos(shots, specAsText(useStore.getState().design, useStore.getState().unit))
-        .then((res) => {
-          setPhotos(shots.map((s, i) => ({ view: s.view, raw: s.dataUrl, image: res.photos[i]?.image, done: true })))
-        })
-        .catch((err) => {
-          setPhotoError(err instanceof Error ? err.message : 'Rendering failed — try again')
-          // stop showing the loading shimmer even though we never got an AI image back —
-          // fall back to the raw 3D screenshots rather than spinning forever
-          setPhotos(shots.map((s) => ({ view: s.view, raw: s.dataUrl, done: true })))
-        })
-        .finally(() => setGenerating(false))
-    }
-    window.addEventListener('bbq:photos-captured', onShots)
-    return () => window.removeEventListener('bbq:photos-captured', onShots)
-  }, [])
-
-  useEffect(() => {
-    const onProgress = (e: Event) => setVideoPct((e as CustomEvent).detail?.pct ?? null)
-    const onDone = (e: Event) => {
-      setVideoUrl((e as CustomEvent).detail?.url ?? null)
-      setVideoPct(null)
-    }
-    const onErr = (e: Event) => {
-      setVideoError((e as CustomEvent).detail?.message ?? 'Could not record a video')
-      setVideoPct(null)
-    }
-    window.addEventListener('bbq:flythrough-progress', onProgress)
-    window.addEventListener('bbq:flythrough-done', onDone)
-    window.addEventListener('bbq:flythrough-error', onErr)
-    return () => {
-      window.removeEventListener('bbq:flythrough-progress', onProgress)
-      window.removeEventListener('bbq:flythrough-done', onDone)
-      window.removeEventListener('bbq:flythrough-error', onErr)
-    }
-  }, [])
-
-  const generatePhotos = () => {
-    setGenerating(true)
-    setPhotoError(null)
-    setPhotos(null)
-    if (useStore.getState().viewMode !== '3d') useStore.getState().toggleView()
-    whenStage3DReady(() => window.dispatchEvent(new CustomEvent('bbq:capture-photos')))
-  }
-
-  const recordVideo = () => {
-    setVideoError(null)
-    setVideoUrl(null)
-    setVideoPct(0)
-    if (useStore.getState().viewMode !== '3d') useStore.getState().toggleView()
-    whenStage3DReady(() => window.dispatchEvent(new CustomEvent('bbq:flythrough-start')))
-  }
+  const { photos, generating, photoError, videoUrl, videoPct, videoError, generatePhotos, recordVideo } = useRenderState()
 
   const empty = design.frames.length === 0
   const fileBase = (design.name || 'kitchen').replace(/\s+/g, '-').toLowerCase()
@@ -268,7 +177,7 @@ function RenderPanel() {
           Turns your exact 3D model into a few photorealistic shots — same layout, same appliances, same finish.
         </p>
         <button className="btn btn-primary" onClick={generatePhotos} disabled={empty || generating}>
-          {generating ? 'Rendering…' : '📷 Generate photos'}
+          {generating ? 'Rendering…' : photos ? '🔄 Regenerate photos' : '📷 Generate photos'}
         </button>
         {photoError && <div className="login-error">{photoError}</div>}
         {photos && (
@@ -307,7 +216,7 @@ function RenderPanel() {
           seconds.
         </p>
         <button className="btn btn-primary" onClick={recordVideo} disabled={empty || videoPct !== null}>
-          {videoPct !== null ? `Recording… ${videoPct}%` : '🎬 Record flythrough'}
+          {videoPct !== null ? `Recording… ${videoPct}%` : videoUrl ? '🔄 Re-record flythrough' : '🎬 Record flythrough'}
         </button>
         {videoError && <div className="login-error">{videoError}</div>}
         {videoUrl && (
